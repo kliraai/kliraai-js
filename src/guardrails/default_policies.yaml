@@ -1,0 +1,275 @@
+version: "1.0.0"
+updated_at: "2025-01-21"
+policies:
+  - id: "toxicity_001"
+    name: "Hate Speech and Toxicity Detection"
+    direction: "both"
+    domains: ["hate", "slur", "racist", "sexist", "homophobic", "transphobic", "xenophobic", "antisemitic", "islamophobic", "ableist", "toxic", "derogatory", "offensive", "bigotry", "discrimination", "harassment", "violence", "threat", "extremist", "supremacist", "nazi", "fascist", "terrorism"]
+    description: "Prevent generation of toxic or hateful content, including racism, sexism, threats, slurs, and violent incitement. Aligned with NIST AI RMF and OECD AI Principles."
+    action: "block"
+    guidelines: [
+      "Never generate, repeat, or engage with hate speech, slurs, or discriminatory language.",
+      "Do not provide content that promotes violence, threats, or extremist ideologies.",
+      "Refuse to create content that demeans or dehumanizes any group based on protected characteristics.",
+      "If encountering toxic input, politely decline and offer to help with constructive alternatives.",
+      "Maintain respectful discourse and promote inclusive, non-discriminatory communication.",
+      "Do not explain how to create hateful content or provide examples of slurs even for educational purposes.",
+      "Redirect conversations toward positive, constructive topics when encountering toxicity."
+    ]
+    patterns: [
+      "(?i)(nigger|faggot|kike|tranny|chink|wetback|spic|gook|raghead|towelhead)",
+      "(?i)\\b(hitler|holocaust)\\s+(was\\s+right|good|justified)",
+      "(?i)\\b(kill|murder|lynch|hang|shoot|bomb|rape)\\s+(all\\s+)?(jews|blacks|muslims|gays|women|men)",
+      "(?i)\\b(gas\\s+the\\s+jews|white\\s+power|blood\\s+and\\s+soil|14\\s*words)",
+      "(?i)\\b(subhuman|untermensch|mongrel|savage|animal)\\b",
+      "(?i)(should\\s+be\\s+killed|deserve\\s+to\\s+die|better\\s+off\\s+dead)",
+      "(?i)\\b(domestic\\s+terrorism|lone\\s+wolf\\s+attack|jihad\\s+against)"
+    ]
+  - id: "pii_001"
+    name: "PII Leakage Prevention"
+    direction: "outbound"
+    domains: ["ssn", "social", "security", "credit", "card", "passport", "license", "driver", "phone", "address", "email", "birthday", "birth", "date", "medical", "record", "account", "number", "routing", "personal", "private", "confidential", "sensitive", "identifier", "pii"]
+    description: "Prevent unauthorized output of Personally Identifiable Information (PII). Based on GDPR Article 5 and NIST SP 800-122."
+    action: "block"
+    guidelines: [
+      "Never output or generate personal identifiable information including SSNs, credit card numbers, addresses, or phone numbers.",
+      "Refuse requests to create, generate, or provide examples of PII even for testing or educational purposes.",
+      "If PII appears in input, do not echo, repeat, or reference the specific sensitive information in your response.",
+      "Remind users not to share sensitive personal information in conversations.",
+      "For data processing tasks, suggest using placeholder or anonymized data instead of real PII.",
+      "Do not help users extract, collect, or organize personal information about individuals.",
+      "Recommend proper data protection practices when users ask about handling sensitive information."
+    ]
+    patterns: [
+      "\\b\\d{3}-?\\d{2}-?\\d{4}\\b",
+      "\\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13}|3[0-9]{13}|6(?:011|5[0-9]{2})[0-9]{12})\\b",
+      "\\b\\d{3}[.-]?\\d{3}[.-]?\\d{4}\\b",
+      "\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b",
+      "\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\b",
+      "\\b(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\\b",
+      "\\b\\d{1,5}\\s+[A-Za-z0-9\\s]+(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Court|Ct|Place|Pl)\\b",
+      "\\b(?:passport|license)\\s+(?:number|#)?\\s*[A-Z0-9]{6,12}\\b"
+    ]
+  - id: "hr_bias_001"
+    name: "Employment Bias and Discrimination Prevention"
+    direction: "both"
+    domains: ["hiring", "salary", "compensation", "promotion", "firing", "discrimination", "bias", "gender", "race", "age", "ethnicity", "religion", "disability", "pregnant", "maternity", "sexual", "orientation", "veteran", "minority", "diversity", "equity", "inclusion", "workplace", "harassment"]
+    description: "Prevent biased or discriminatory content related to employment practices, compensation, and workplace decisions."
+    action: "allow"
+    guidelines: [
+      "Never provide advice that could lead to discriminatory hiring, compensation, or employment practices.",
+      "Do not suggest different treatment based on protected characteristics like gender, race, age, religion, or disability status.",
+      "Promote fair and equal treatment in all employment-related discussions.",
+      "If asked about compensation or hiring practices, emphasize merit-based, objective criteria only.",
+      "Refuse to help create job descriptions, policies, or practices that could be discriminatory.",
+      "Do not provide information that reinforces workplace stereotypes or biases.",
+      "Encourage inclusive and equitable workplace practices when discussing employment topics."
+    ]
+    patterns: [
+      "(?i)(women|minorities|blacks|hispanics|asians|muslims|jews|older people|disabled people).*(?:less|lower|worse|inferior).*(?:pay|salary|compensation|capable|qualified)",
+      "(?i)(?:hire|prefer|want|need).*(?:only|just|mainly|mostly).*(?:men|women|young|white|christian|straight)",
+      "(?i)(?:pregnant|maternity|women).*(?:liability|problem|expensive|unreliable)",
+      "(?i)(?:black|hispanic|muslim|jewish).*(?:names|sounding|looking).*(?:avoid|reject|screen out)",
+      "(?i)(?:too old|over qualified|cultural fit|not our type).*(?:hiring|promotion)",
+      "(?i)(?:diversity hire|quota|token|affirmative action).*(?:less qualified|lower standards)",
+      "(?i)(?:boys club|old boys network|locker room talk).*(?:normal|acceptable|tradition)"
+    ]
+  - id: "medical_advice_001"
+    name: "Medical Advice and Diagnosis Prevention"
+    direction: "both"
+    domains: ["diagnosis", "diagnose", "medical", "health", "doctor", "physician", "treatment", "medicine", "prescription", "drug", "medication", "symptom", "disease", "illness", "condition", "therapy", "surgery", "procedure", "cancer", "diabetes", "depression", "anxiety", "pain", "infection", "virus", "bacteria"]
+    description: "Prevent providing medical advice, diagnoses, or treatment recommendations that should only come from qualified healthcare professionals."
+    action: "allow"
+    guidelines: [
+      "Never provide medical diagnoses or suggest specific medical treatments.",
+      "Do not recommend specific medications, dosages, or medical procedures.",
+      "Always direct users to consult with qualified healthcare professionals for medical concerns.",
+      "Provide general health information only, clearly stating it's not medical advice.",
+      "Do not interpret medical test results or symptoms to suggest specific conditions.",
+      "Encourage users to seek emergency medical care for serious symptoms.",
+      "Avoid giving advice that could delay or replace proper medical care."
+    ]
+    patterns: [
+      "(?i)you (have|probably have|might have|likely have) (cancer|diabetes|depression|anxiety|adhd|bipolar|covid|flu|pneumonia)",
+      "(?i)(take|try|use) \\d+(?:mg|g|ml|cc) of (.*(?:medication|drug|medicine|pill|tablet))",
+      "(?i)(don't need|skip|avoid) (?:to see|seeing) (?:a |your )?(?:doctor|physician|therapist|psychiatrist)",
+      "(?i)(?:definitely|certainly|clearly) (?:have|suffering from|diagnosed with)",
+      "(?i)(?:stop taking|discontinue|reduce|increase) your (?:medication|prescription|treatment)",
+      "(?i)instead of (?:seeing|visiting) (?:a |your )?(?:doctor|specialist|therapist)",
+      "(?i)this (?:home remedy|natural cure|supplement) (?:will cure|can treat|fixes)"
+    ]
+  - id: "financial_advice_001"
+    name: "Financial Advice and Investment Recommendations Prevention"
+    direction: "both"
+    domains: ["investment", "invest", "stock", "crypto", "cryptocurrency", "bitcoin", "trading", "forex", "portfolio", "financial", "advice", "money", "loans", "mortgage", "credit", "debt", "retirement", "savings", "taxes", "insurance", "wealth", "profit", "returns", "risk", "market", "securities", "bonds", "etf", "mutual", "fund"]
+    description: "Prevent providing specific financial advice, investment recommendations, or trading strategies that require professional financial advisor credentials."
+    action: "allow"
+    guidelines: [
+      "Do not provide specific investment recommendations or financial advice.",
+      "Avoid suggesting specific stocks, cryptocurrencies, or financial products to buy or sell.",
+      "Do not provide tax advice or specific strategies for tax optimization.",
+      "Always recommend consulting with qualified financial advisors for investment decisions.",
+      "Provide general financial education only, clearly stating it's not personalized advice.",
+      "Do not predict market movements or guarantee investment returns.",
+      "Emphasize the importance of diversification and risk assessment by professionals."
+    ]
+    patterns: [
+      "(?i)you should (buy|sell|invest in|purchase) (.*(?:stock|crypto|bitcoin|shares|bonds))",
+      "(?i)guaranteed (profit|returns|gains) of \\d+%",
+      "(?i)this (?:investment|stock|crypto) (?:will|guaranteed to) (?:double|triple|make you rich)",
+      "(?i)(?:tax|legal) (?:loophole|strategy|scheme) (?:to avoid|for hiding)",
+      "(?i)(?:definitely|certainly|sure to) (?:go up|increase|moon|crash)",
+      "(?i)(?:get rich quick|easy money|passive income) (?:scheme|strategy|method)",
+      "(?i)(?:insider|secret|hidden) (?:information|tip|strategy) (?:about|for)"
+    ]
+  - id: "legal_advice_001"
+    name: "Legal Advice and Legal Services Prevention"
+    direction: "both"
+    domains: ["legal", "lawyer", "attorney", "law", "lawsuit", "court", "judge", "contract", "agreement", "liability", "negligence", "malpractice", "criminal", "civil", "rights", "violation", "case", "litigation", "settlement", "damages", "sue", "counsel", "representation", "jurisdiction", "statute", "regulation"]
+    description: "Prevent providing specific legal advice, legal interpretations, or recommendations that constitute practicing law without a license."
+    action: "allow"
+    guidelines: [
+      "Do not provide specific legal advice or interpretations of laws for particular situations.",
+      "Avoid suggesting specific legal strategies or actions for legal disputes.",
+      "Do not help draft legal documents, contracts, or legal correspondence.",
+      "Always recommend consulting with qualified attorneys for legal matters.",
+      "Provide general legal information only, clearly stating it's not legal advice.",
+      "Do not interpret court decisions or legal precedents for specific cases.",
+      "Encourage users to seek proper legal representation for their specific circumstances."
+    ]
+    patterns: [
+      "(?i)you (?:should|can|have grounds to) sue (?:for|because|over)",
+      "(?i)this (?:violates|breaks) (?:the law|.*law|regulations?) (?:and you can|so you should)",
+      "(?i)you (?:definitely|clearly|obviously) have a (?:case|claim|lawsuit)",
+      "(?i)(?:file|submit) (?:this|the) (?:motion|petition|complaint|lawsuit) (?:yourself|pro se)",
+      "(?i)you (?:don't need|won't need|shouldn't hire) (?:a |an )?(?:lawyer|attorney)",
+      "(?i)(?:represent yourself|go pro se) (?:in|for) (?:this|your) (?:case|matter)",
+      "(?i)(?:statute of limitations|legal deadline) (?:is|has) (?:expired|passed|over)"
+    ]
+  - id: "security_vulnerabilities_001"
+    name: "Security Vulnerabilities and Exploits Prevention"
+    direction: "both"
+    domains: ["hack", "exploit", "vulnerability", "malware", "virus", "trojan", "ransomware", "phishing", "injection", "backdoor", "rootkit", "botnet", "ddos", "breach", "intrusion", "penetration", "attack", "cyber", "security", "password", "crack", "bypass", "firewall", "encryption", "decrypt"]
+    description: "Prevent providing information that could be used to exploit security vulnerabilities, create malware, or conduct cyberattacks."
+    action: "allow"
+    guidelines: [
+      "Do not provide detailed instructions for exploiting security vulnerabilities.",
+      "Avoid sharing specific techniques for creating malware, viruses, or other malicious software.",
+      "Do not help with password cracking, system intrusion, or unauthorized access methods.",
+      "Refuse to provide information about bypassing security measures or protections.",
+      "For security education, focus on defensive strategies and responsible disclosure practices.",
+      "Direct users to legitimate cybersecurity resources and ethical hacking courses.",
+      "Encourage responsible security research within legal and ethical boundaries."
+    ]
+    patterns: [
+      "(?i)how to (?:hack|crack|break into|exploit|bypass) (?:.*(?:system|network|database|website|server))",
+      "(?i)(?:sql injection|xss|cross.site|buffer overflow|privilege escalation) (?:attack|exploit|payload|code)",
+      "(?i)(?:create|make|build|write) (?:a |an )?(?:virus|malware|trojan|ransomware|rootkit|keylogger)",
+      "(?i)(?:ddos|dos) (?:attack|tool|script|method) (?:against|on|for)",
+      "(?i)(?:steal|extract|dump) (?:passwords|credentials|database|personal data)",
+      "(?i)(?:bypass|disable|turn off) (?:antivirus|firewall|security|protection)",
+      "(?i)(?:social engineering|phishing) (?:attack|campaign|emails|techniques) (?:to get|for obtaining)"
+    ]
+  - id: "harmful_content_001"
+    name: "Harmful Content and Self-Harm Prevention"
+    direction: "both"
+    domains: ["suicide", "self-harm", "cutting", "depression", "drugs", "substance", "abuse", "addiction", "overdose", "dangerous", "eating", "disorder", "bulimia", "anorexia", "self-injury", "harm", "violence", "weapons", "explosives", "poison", "toxic", "dangerous", "illegal", "criminal", "activity"]
+    description: "Prevent content that could promote self-harm, dangerous activities, substance abuse, or other harmful behaviors."
+    action: "allow"
+    guidelines: [
+      "Never provide information that could be used for self-harm, suicide, or dangerous activities.",
+      "Do not give instructions for creating weapons, explosives, or dangerous substances.",
+      "Avoid detailed descriptions of self-harm methods or eating disorder behaviors.",
+      "Do not provide information about obtaining illegal drugs or dangerous substances.",
+      "If someone expresses suicidal thoughts, provide crisis helpline resources and encourage professional help.",
+      "Refuse to help with illegal activities or dangerous pranks that could cause harm.",
+      "Focus on promoting mental health resources and positive coping strategies."
+    ]
+    patterns: [
+      "(?i)how to (?:kill myself|commit suicide|end my life|hurt myself)",
+      "(?i)(?:best|easiest|painless) (?:way to|method to|ways to) (?:die|kill yourself|commit suicide)",
+      "(?i)(?:make|create|build) (?:bomb|explosive|poison|weapon|gun)",
+      "(?i)(?:cut|harm|hurt) (?:myself|yourself) (?:with|using|by)",
+      "(?i)(?:purge|throw up|starve) (?:after|to lose|for weight)",
+      "(?i)(?:buy|get|obtain|find) (?:illegal drugs|cocaine|heroin|fentanyl|meth)",
+      "(?i)(?:overdose|od) (?:on|with|using) (?:pills|drugs|medication)"
+    ]
+  # Memory Leak Prevention Policies for MCP Communications
+  - id: "memory_leak_001"
+    name: "MCP Memory Leak - PII Outbound Prevention"
+    direction: "outbound"
+    description: "Prevent PII from being leaked through MCP communications"
+    action: "block"
+    domains: ["personal", "pii", "private", "confidential", "sensitive", "ssn", "credit", "phone", "address", "email"]
+    guidelines: [
+      "Never include personal information in outbound communications",
+      "Redact or anonymize any sensitive data before sending",
+      "Use placeholder values for examples or testing",
+      "Implement proper data masking for structured data"
+    ]
+    patterns: [
+      "(?i)my\\s+(?:name|phone|address|email|ssn|credit\\s+card)\\s+is\\s+[A-Za-z0-9@.-]+",
+      "(?i)(?:customer|user|client)\\s+(?:name|phone|address|email):\\s*[A-Za-z0-9@.-]+",
+      "(?i)password\\s*[:=]\\s*[A-Za-z0-9!@#$%^&*()_+-=]+",
+      "(?i)api[_\\s]?key\\s*[:=]\\s*[A-Za-z0-9._-]+",
+      "(?i)token\\s*[:=]\\s*[A-Za-z0-9._-]{20,}"
+    ]
+  - id: "memory_leak_002"
+    name: "MCP Memory Leak - Context Spillage Prevention"
+    direction: "outbound"
+    description: "Prevent context from previous conversations from leaking to other agents"
+    action: "block"
+    domains: ["context", "conversation", "previous", "earlier", "memory", "remember", "mentioned", "discussed"]
+    guidelines: [
+      "Do not reference information from previous conversations",
+      "Avoid carrying context between different user sessions",
+      "Isolate conversation threads to prevent information leakage",
+      "Clear context appropriately between different agent interactions"
+    ]
+    patterns: [
+      "(?i)(?:as\\s+(?:I|we)\\s+)?(?:mentioned|discussed|talked\\s+about)\\s+(?:earlier|before|previously)",
+      "(?i)(?:from\\s+our\\s+)?(?:previous|earlier|last)\\s+(?:conversation|discussion|chat)",
+      "(?i)(?:user|customer|client)\\s+(?:X|Y|Z|A|B)\\s+(?:mentioned|said|told\\s+me)",
+      "(?i)(?:in\\s+the\\s+)?(?:previous|earlier|last)\\s+(?:session|interaction|meeting)",
+      "(?i)(?:I|we)\\s+(?:remember|recall)\\s+(?:that|when|discussing)"
+    ]
+  - id: "memory_leak_003"
+    name: "MCP Memory Leak - Chain of Thought Revelation"
+    direction: "outbound"
+    description: "Prevent internal reasoning chains from being exposed to external agents"
+    action: "block"
+    domains: ["thinking", "reasoning", "internal", "process", "step", "analysis", "conclusion"]
+    guidelines: [
+      "Do not expose internal reasoning processes",
+      "Keep analytical steps internal to the current agent",
+      "Provide only final conclusions, not intermediate steps",
+      "Avoid revealing decision-making processes to external systems"
+    ]
+    patterns: [
+      "(?i)(?:let\\s+me\\s+)?(?:think|reason|analyze)\\s+(?:about|through)\\s+this\\s+step\\s+by\\s+step",
+      "(?i)(?:my\\s+)?(?:internal\\s+)?(?:reasoning|thought\\s+process|analysis)\\s+(?:is|shows)",
+      "(?i)(?:step\\s+\\d+|first|second|third|finally)\\s*[\\:,]\\s*[\\w\\s]+(?:then|next|therefore)",
+      "(?i)(?:based\\s+on\\s+my\\s+)?(?:internal\\s+)?(?:analysis|evaluation|assessment)\\s+of",
+      "(?i)(?:the\\s+)?(?:decision\\s+)?(?:tree|process|flow)\\s+(?:shows|indicates|suggests)"
+    ]
+  - id: "memory_leak_004"
+    name: "MCP Memory Leak - Credential and Secret Prevention"
+    direction: "outbound"
+    description: "Prevent credentials, secrets, and API keys from being leaked in outbound communications"
+    action: "block"
+    domains: ["credential", "secret", "key", "password", "token", "api", "auth", "authorization", "access"]
+    guidelines: [
+      "Never include credentials or secrets in outbound messages",
+      "Mask or redact any authentication information",
+      "Use placeholder values for demonstrations",
+      "Implement proper secret management practices"
+    ]
+    patterns: [
+      "(?i)(?:api[_\\s]?key|access[_\\s]?token|secret[_\\s]?key)\\s*[:=]\\s*[A-Za-z0-9._-]{10,}",
+      "(?i)(?:password|passwd|pwd)\\s*[:=]\\s*[A-Za-z0-9!@#$%^&*()_+-=]{6,}",
+      "(?i)(?:bearer|basic)\\s+[A-Za-z0-9+/=]{20,}",
+      "(?i)(?:client[_\\s]?secret|private[_\\s]?key)\\s*[:=]\\s*[A-Za-z0-9._-]{10,}",
+      "(?i)(?:sk_|pk_|rk_|tk_)[A-Za-z0-9]{20,}",
+      "(?i)(?:ghp_|gho_|ghu_|ghs_)[A-Za-z0-9]{36,}",
+      "(?i)(?:AKIA|ASIA)[A-Z0-9]{16,}"
+    ]

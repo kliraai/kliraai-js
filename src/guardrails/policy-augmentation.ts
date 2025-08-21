@@ -4,6 +4,7 @@
 
 import type { PolicyViolation, Logger } from '../types/index.js';
 import { getLogger } from '../config/index.js';
+import { PolicyDefinition } from '../types/policies.js';
 
 export interface AugmentationGuideline {
   id: string;
@@ -18,7 +19,9 @@ export interface AugmentationGuideline {
 
 export class PolicyAugmentation {
   private guidelines: AugmentationGuideline[] = [];
+  private policyGuidelines: Map<string, string[]> = new Map();
   private logger: Logger;
+  private yamlInitialized: boolean = false;
 
   constructor() {
     this.logger = getLogger();
@@ -119,9 +122,31 @@ export class PolicyAugmentation {
   }
 
   /**
-   * Generate augmentation guidelines based on violations
+   * Initialize with YAML policies
+   */
+  async initialize(policies: PolicyDefinition[]): Promise<void> {
+    this.policyGuidelines.clear();
+    
+    for (const policy of policies) {
+      if (policy.guidelines && policy.guidelines.length > 0) {
+        this.policyGuidelines.set(policy.id, policy.guidelines);
+      }
+    }
+    
+    this.yamlInitialized = true;
+    this.logger.debug(`Initialized PolicyAugmentation with ${policies.length} YAML policies`);
+  }
+
+  /**
+   * Generate augmentation guidelines based on violations (enhanced for YAML)
    */
   generateGuidelines(violations: PolicyViolation[]): string[] {
+    // If YAML policies are loaded, prioritize them
+    if (this.yamlInitialized) {
+      return this.generateYAMLGuidelines(violations);
+    }
+    
+    // Fallback to legacy guidelines
     const applicableGuidelines: AugmentationGuideline[] = [];
     const violationTypes = violations.map(v => v.ruleId);
     const severityLevels = violations.map(v => v.severity);
@@ -142,7 +167,7 @@ export class PolicyAugmentation {
         // Check severity levels
         if (guideline.conditions.severityLevels) {
           const hasMatchingSeverity = guideline.conditions.severityLevels.some(
-            severity => severityLevels.includes(severity)
+            severity => severityLevels.includes(severity as any)
           );
           applicable = applicable && hasMatchingSeverity;
         }
@@ -230,11 +255,59 @@ Always adhere to these guidelines in your responses.`;
   }
 
   /**
+   * Generate guidelines from YAML policies
+   */
+  private generateYAMLGuidelines(violations: PolicyViolation[]): string[] {
+    const guidelines: string[] = [];
+    const processedPolicies = new Set<string>();
+    
+    // Get guidelines from violated policies
+    for (const violation of violations) {
+      if (!processedPolicies.has(violation.ruleId)) {
+        const policyGuidelines = this.policyGuidelines.get(violation.ruleId);
+        if (policyGuidelines) {
+          guidelines.push(...policyGuidelines);
+          processedPolicies.add(violation.ruleId);
+        }
+      }
+    }
+    
+    // If no specific guidelines found, add general safety guidelines
+    if (guidelines.length === 0) {
+      guidelines.push(
+        'Ensure all responses are safe, respectful, and do not contain harmful content.',
+        'Provide accurate, factual information and clearly distinguish between facts and opinions.',
+        'Be helpful, clear, and concise in your responses while being thorough when necessary.'
+      );
+    }
+    
+    // Remove duplicates and limit to top 10 guidelines
+    const uniqueGuidelines = Array.from(new Set(guidelines));
+    this.logger.debug(`Generated ${uniqueGuidelines.length} YAML-based guidelines`);
+    
+    return uniqueGuidelines.slice(0, 10);
+  }
+
+  /**
    * Load guidelines from configuration
    */
   loadGuidelines(guidelines: AugmentationGuideline[]): void {
     for (const guideline of guidelines) {
       this.addGuideline(guideline);
     }
+  }
+
+  /**
+   * Check if YAML guidelines are initialized
+   */
+  isYAMLInitialized(): boolean {
+    return this.yamlInitialized;
+  }
+
+  /**
+   * Get policy guidelines count
+   */
+  getPolicyGuidelinesCount(): number {
+    return this.policyGuidelines.size;
   }
 }

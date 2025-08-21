@@ -8,7 +8,7 @@ import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentation
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import { Resource } from '@opentelemetry/resources';
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
-import type { KliraConfig, SpanAttributes, TraceMetadata, Logger } from '../types/index.js';
+import type { KliraConfig, SpanAttributes, TraceMetadata, HierarchyContext, ConversationContext, Logger } from '../types/index.js';
 import { getLogger } from '../config/index.js';
 
 export interface TracingConfig {
@@ -57,7 +57,7 @@ export class KliraTracing {
       headers: kliraConfig.apiKey ? {
         'Authorization': `Bearer ${kliraConfig.apiKey}`,
       } : {},
-      enabled: kliraConfig.tracingEnabled,
+      enabled: kliraConfig.tracingEnabled ?? true,
       autoInstrumentation: true,
     };
 
@@ -85,8 +85,8 @@ export class KliraTracing {
 
       // Create exporter
       const exporter = new OTLPTraceExporter({
-        url: this.config.endpoint,
-        headers: this.config.headers,
+        url: this.config.endpoint || 'https://api.getklira.com/v1/traces',
+        headers: this.config.headers || {},
       });
 
       // Create SDK
@@ -310,6 +310,127 @@ export class KliraTracing {
    */
   getCurrentSpan(): Span | undefined {
     return trace.getActiveSpan();
+  }
+
+  /**
+   * Set organization context (matching Python SDK)
+   */
+  setOrganization(organizationId: string): void {
+    const contextAttributes = {
+      'klira.organization_id': organizationId,
+    };
+    
+    this.addAttributes(contextAttributes);
+    this.logger.debug(`Set organization context: ${organizationId}`);
+  }
+
+  /**
+   * Set project context (matching Python SDK)
+   */
+  setProject(projectId: string): void {
+    const contextAttributes = {
+      'klira.project_id': projectId,
+    };
+    
+    this.addAttributes(contextAttributes);
+    this.logger.debug(`Set project context: ${projectId}`);
+  }
+
+  /**
+   * Set conversation context (matching Python SDK)
+   */
+  setConversationContext(conversationId: string, userId?: string): void {
+    const contextAttributes: Partial<SpanAttributes> = {
+      'klira.conversation_id': conversationId,
+    };
+    
+    if (userId) {
+      contextAttributes['klira.user_id'] = userId;
+    }
+    
+    this.addAttributes(contextAttributes);
+    this.logger.debug(`Set conversation context: ${conversationId}${userId ? ` for user: ${userId}` : ''}`);
+  }
+
+  /**
+   * Set complete hierarchy context (matching Python SDK)
+   */
+  setHierarchyContext(context: HierarchyContext): void {
+    const contextAttributes: Partial<SpanAttributes> = {};
+    
+    if (context.organizationId) {
+      contextAttributes['klira.organization_id'] = context.organizationId;
+    }
+    if (context.projectId) {
+      contextAttributes['klira.project_id'] = context.projectId;
+    }
+    if (context.agentId) {
+      contextAttributes['klira.agent_id'] = context.agentId;
+    }
+    if (context.taskId) {
+      contextAttributes['klira.task_id'] = context.taskId;
+    }
+    if (context.toolId) {
+      contextAttributes['klira.tool_id'] = context.toolId;
+    }
+    if (context.conversationId) {
+      contextAttributes['klira.conversation_id'] = context.conversationId;
+    }
+    if (context.userId) {
+      contextAttributes['klira.user_id'] = context.userId;
+    }
+    
+    this.addAttributes(contextAttributes);
+    this.logger.debug(`Set hierarchy context:`, context);
+  }
+
+  /**
+   * Get current context (matching Python SDK)
+   */
+  getCurrentContext(): Partial<TraceMetadata> {
+    const span = trace.getActiveSpan();
+    if (!span) {
+      return {};
+    }
+
+    // Extract context from span attributes
+    // Note: OpenTelemetry doesn't provide direct access to span attributes
+    // This is a best-effort implementation
+    const context: Partial<TraceMetadata> = {};
+    
+    // In a real implementation, we would need to store context separately
+    // or use OpenTelemetry context API to store and retrieve these values
+    this.logger.debug('getCurrentContext called - returning empty context (span attributes not directly accessible)');
+    
+    return context;
+  }
+
+  /**
+   * Set external prompt tracing context (matching Python SDK)
+   */
+  setExternalPromptContext(promptId: string, model: string, parameters?: Record<string, any>): void {
+    const contextAttributes: Partial<SpanAttributes> = {
+      'prompt.id': promptId,
+      'prompt.model': model,
+    };
+    
+    if (parameters) {
+      Object.entries(parameters).forEach(([key, value]) => {
+        if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+          contextAttributes[`prompt.param.${key}`] = String(value);
+        }
+      });
+    }
+    
+    this.addAttributes(contextAttributes);
+    this.logger.debug(`Set external prompt context: ${promptId} with model: ${model}`);
+  }
+
+  /**
+   * Check if tracing is initialized
+   */
+  isInitialized(): boolean {
+    return this.initialized;
   }
 
   /**

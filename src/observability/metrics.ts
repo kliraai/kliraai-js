@@ -28,20 +28,20 @@ export class KliraMetrics implements MetricsCollector {
   private logger: Logger;
 
   // Counters
-  private requestCounter: Counter;
-  private successCounter: Counter;
-  private errorCounter: Counter;
-  private violationCounter: Counter;
-  private guardrailCheckCounter: Counter;
+  private requestCounter!: Counter;
+  private successCounter!: Counter;
+  private errorCounter!: Counter;
+  private violationCounter!: Counter;
+  private guardrailCheckCounter!: Counter;
 
   // Histograms
-  private latencyHistogram: Histogram;
-  private tokenHistogram: Histogram;
-  private costHistogram: Histogram;
-  private guardrailLatencyHistogram: Histogram;
+  private latencyHistogram!: Histogram;
+  private tokenHistogram!: Histogram;
+  private costHistogram!: Histogram;
+  private guardrailLatencyHistogram!: Histogram;
 
   // Gauges
-  private activeRequestsGauge: Gauge;
+  private activeRequestsGauge!: Gauge;
 
   private constructor() {
     this.logger = getLogger();
@@ -139,20 +139,6 @@ export class KliraMetrics implements MetricsCollector {
     this.activeRequestsGauge.record(-1);
   }
 
-  /**
-   * Record a failed request
-   */
-  recordError(metadata: TraceMetadata, error: Error): void {
-    this.errorCounter.add(1, {
-      framework: metadata.framework || 'unknown',
-      provider: metadata.provider || 'unknown',
-      model: metadata.model || 'unknown',
-      error_type: error.constructor.name,
-    });
-
-    // Decrement active requests
-    this.activeRequestsGauge.record(-1);
-  }
 
   /**
    * Record latency
@@ -216,6 +202,98 @@ export class KliraMetrics implements MetricsCollector {
       ...attributes,
       cost_type: 'total',
     });
+  }
+
+  /**
+   * Record LLM call metrics (for adapter compatibility)
+   */
+  recordLLMCall(callData: {
+    provider: string;
+    model: string;
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+    latency: number;
+    cached?: boolean;
+    requestId: string;
+    streaming?: boolean;
+  }): void {
+    const attributes = {
+      provider: callData.provider,
+      model: callData.model,
+      cached: callData.cached?.toString() || 'false',
+      streaming: callData.streaming?.toString() || 'false',
+    };
+
+    // Record request
+    this.requestCounter.add(1, attributes);
+
+    // Record success
+    this.successCounter.add(1, attributes);
+
+    // Record latency
+    this.latencyHistogram.record(callData.latency, {
+      ...attributes,
+      operation: 'llm_call',
+    });
+
+    // Record tokens
+    this.tokenHistogram.record(callData.promptTokens, {
+      ...attributes,
+      token_type: 'input',
+    });
+
+    this.tokenHistogram.record(callData.completionTokens, {
+      ...attributes,
+      token_type: 'output',
+    });
+
+    this.tokenHistogram.record(callData.totalTokens, {
+      ...attributes,
+      token_type: 'total',
+    });
+  }
+
+  /**
+   * Record error for LLM calls (for adapter compatibility)
+   */
+  recordError(operation: string, errorData: {
+    provider: string;
+    model: string;
+    error: string;
+    requestId: string;
+  }): void;
+  recordError(metadata: TraceMetadata, error: Error): void;
+  recordError(
+    operationOrMetadata: string | TraceMetadata,
+    errorDataOrError?: any
+  ): void {
+    if (typeof operationOrMetadata === 'string') {
+      // New signature for adapter compatibility
+      const operation = operationOrMetadata;
+      const errorData = errorDataOrError;
+      
+      this.errorCounter.add(1, {
+        operation,
+        provider: errorData.provider,
+        model: errorData.model,
+        error_type: 'llm_error',
+      });
+    } else {
+      // Original signature
+      const metadata = operationOrMetadata;
+      const error = errorDataOrError;
+      
+      this.errorCounter.add(1, {
+        framework: metadata.framework || 'unknown',
+        provider: metadata.provider || 'unknown',
+        model: metadata.model || 'unknown',
+        error_type: error.constructor.name,
+      });
+
+      // Decrement active requests
+      this.activeRequestsGauge.record(-1);
+    }
   }
 
   /**

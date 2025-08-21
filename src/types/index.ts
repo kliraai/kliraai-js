@@ -58,16 +58,48 @@ export interface GuardrailOptions {
 
 // Observability types
 export interface TraceMetadata {
+  // Hierarchy context (matching Python SDK)
+  organizationId?: string;
+  projectId?: string;
+  agentId?: string;
+  taskId?: string;
+  toolId?: string;
+  
+  // Conversation context
+  conversationId?: string;
   userId?: string;
   sessionId?: string;
+  
+  // Request context
   requestId?: string;
+  
+  // LLM context
   model?: string;
   provider?: string;
   framework?: string;
+  
+  // Additional metadata
   [key: string]: any;
 }
 
+// Hierarchical context management (matching Python SDK)
+export interface HierarchyContext {
+  organizationId?: string;
+  projectId?: string;
+  agentId?: string;
+  taskId?: string;
+  toolId?: string;
+  conversationId?: string;
+  userId?: string;
+}
+
+export interface ConversationContext {
+  conversationId: string;
+  userId?: string;
+}
+
 export interface SpanAttributes {
+  // Framework and LLM attributes
   'klira.framework': string;
   'klira.model'?: string;
   'klira.provider'?: string;
@@ -77,6 +109,19 @@ export interface SpanAttributes {
   'klira.cost.output'?: number;
   'klira.guardrails.enabled'?: boolean;
   'klira.guardrails.violations'?: number;
+  
+  // Hierarchy context attributes (matching Python SDK)
+  'klira.organization_id'?: string;
+  'klira.project_id'?: string;
+  'klira.agent_id'?: string;
+  'klira.task_id'?: string;
+  'klira.tool_id'?: string;
+  'klira.conversation_id'?: string;
+  'klira.user_id'?: string;
+  'klira.session_id'?: string;
+  'klira.request_id'?: string;
+  
+  // Additional attributes
   [key: string]: any;
 }
 

@@ -7,24 +7,24 @@
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
-      "require": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "require": "./dist/index.js"
     },
     "./vercel-ai": {
+      "types": "./dist/adapters/vercel-ai/index.d.ts",
       "import": "./dist/adapters/vercel-ai/index.mjs",
-      "require": "./dist/adapters/vercel-ai/index.js",
-      "types": "./dist/adapters/vercel-ai/index.d.ts"
+      "require": "./dist/adapters/vercel-ai/index.js"
     },
     "./langchain": {
+      "types": "./dist/adapters/langchain/index.d.ts",
       "import": "./dist/adapters/langchain/index.mjs",
-      "require": "./dist/adapters/langchain/index.js",
-      "types": "./dist/adapters/langchain/index.d.ts"
+      "require": "./dist/adapters/langchain/index.js"
     },
     "./openai": {
+      "types": "./dist/adapters/openai/index.d.ts",
       "import": "./dist/adapters/openai/index.mjs",
-      "require": "./dist/adapters/openai/index.js",
-      "types": "./dist/adapters/openai/index.d.ts"
+      "require": "./dist/adapters/openai/index.js"
     }
   },
   "files": [
@@ -42,7 +42,11 @@
     "lint:fix": "eslint src --ext .ts,.tsx --fix",
     "type-check": "tsc --noEmit",
     "clean": "rimraf dist",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "example:openai": "tsx examples/openai-example.ts",
+    "example:langchain": "tsx examples/langchain-example.ts",
+    "example:custom": "tsx examples/custom-agent-example.ts",
+    "example:real-providers": "tsx examples/real-providers-demo.ts"
   },
   "keywords": [
     "ai",
@@ -68,22 +72,23 @@
   "homepage": "https://github.com/kliraai/kliraai-js#readme",
   "dependencies": {
     "@opentelemetry/api": "^1.9.0",
-    "@opentelemetry/sdk-node": "^0.53.0",
     "@opentelemetry/auto-instrumentations-node": "^0.50.0",
     "@opentelemetry/exporter-trace-otlp-http": "^0.53.0",
     "@opentelemetry/instrumentation": "^0.53.0",
     "@opentelemetry/resources": "^1.26.0",
+    "@opentelemetry/sdk-node": "^0.53.0",
     "@opentelemetry/semantic-conventions": "^1.26.0",
+    "js-yaml": "^4.1.0",
     "zod": "^3.23.8"
   },
   "peerDependencies": {
-    "ai": ">=3.0.0",
-    "@ai-sdk/openai": ">=0.0.1",
     "@ai-sdk/anthropic": ">=0.0.1",
     "@ai-sdk/google": ">=0.0.1",
+    "@ai-sdk/openai": ">=0.0.1",
     "@langchain/core": ">=0.2.0",
     "@langchain/openai": ">=0.2.0",
-    "openai": ">=4.0.0"
+    "ai": ">=3.0.0",
+    "openai": "^5.13.1"
   },
   "peerDependenciesMeta": {
     "ai": {
@@ -109,6 +114,7 @@
     }
   },
   "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.14.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
@@ -117,6 +123,7 @@
     "eslint": "^9.0.0",
     "rimraf": "^6.0.0",
     "tsup": "^8.2.0",
+    "tsx": "^4.7.0",
     "typescript": "^5.5.0",
     "vitest": "^2.0.0"
   },

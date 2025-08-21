@@ -7,6 +7,8 @@ import type {
   KliraConfig, 
   GuardrailOptions, 
   TraceMetadata,
+  HierarchyContext,
+  ConversationContext,
   Logger 
 } from './types/index.js';
 import { 
@@ -141,18 +143,93 @@ export class KliraAI {
   }
 
   /**
-   * Set association properties for current trace
+   * Set association properties for current trace (enhanced version)
    */
   static setTraceMetadata(metadata: TraceMetadata): void {
     if (KliraAI.tracing) {
-      KliraAI.tracing.addAttributes({
-        'user.id': metadata.userId,
-        'session.id': metadata.sessionId,
-        'request.id': metadata.requestId,
-        'llm.model': metadata.model,
-        'llm.provider': metadata.provider,
-        'llm.framework': metadata.framework,
-      });
+      const attributes: Record<string, any> = {};
+      
+      // Hierarchy context
+      if (metadata.organizationId) attributes['klira.organization_id'] = metadata.organizationId;
+      if (metadata.projectId) attributes['klira.project_id'] = metadata.projectId;
+      if (metadata.agentId) attributes['klira.agent_id'] = metadata.agentId;
+      if (metadata.taskId) attributes['klira.task_id'] = metadata.taskId;
+      if (metadata.toolId) attributes['klira.tool_id'] = metadata.toolId;
+      
+      // Conversation context
+      if (metadata.conversationId) attributes['klira.conversation_id'] = metadata.conversationId;
+      if (metadata.userId) attributes['klira.user_id'] = metadata.userId;
+      if (metadata.sessionId) attributes['klira.session_id'] = metadata.sessionId;
+      
+      // Request context
+      if (metadata.requestId) attributes['klira.request_id'] = metadata.requestId;
+      
+      // LLM context
+      if (metadata.model) attributes['llm.model'] = metadata.model;
+      if (metadata.provider) attributes['llm.provider'] = metadata.provider;
+      if (metadata.framework) attributes['llm.framework'] = metadata.framework;
+      
+      // Backward compatibility attributes
+      if (metadata.userId) attributes['user.id'] = metadata.userId;
+      if (metadata.sessionId) attributes['session.id'] = metadata.sessionId;
+      if (metadata.requestId) attributes['request.id'] = metadata.requestId;
+      
+      KliraAI.tracing.addAttributes(attributes);
+    }
+  }
+
+  /**
+   * Set organization context (matching Python SDK)
+   */
+  static setOrganization(organizationId: string): void {
+    if (KliraAI.tracing) {
+      KliraAI.tracing.setOrganization(organizationId);
+    }
+  }
+
+  /**
+   * Set project context (matching Python SDK)
+   */
+  static setProject(projectId: string): void {
+    if (KliraAI.tracing) {
+      KliraAI.tracing.setProject(projectId);
+    }
+  }
+
+  /**
+   * Set conversation context (matching Python SDK)
+   */
+  static setConversationContext(conversationId: string, userId?: string): void {
+    if (KliraAI.tracing) {
+      KliraAI.tracing.setConversationContext(conversationId, userId);
+    }
+  }
+
+  /**
+   * Set complete hierarchy context (matching Python SDK)
+   */
+  static setHierarchyContext(context: HierarchyContext): void {
+    if (KliraAI.tracing) {
+      KliraAI.tracing.setHierarchyContext(context);
+    }
+  }
+
+  /**
+   * Get current context (matching Python SDK)
+   */
+  static getCurrentContext(): Partial<TraceMetadata> {
+    if (KliraAI.tracing) {
+      return KliraAI.tracing.getCurrentContext();
+    }
+    return {};
+  }
+
+  /**
+   * Set external prompt tracing context (matching Python SDK)
+   */
+  static setExternalPromptContext(promptId: string, model: string, parameters?: Record<string, any>): void {
+    if (KliraAI.tracing) {
+      KliraAI.tracing.setExternalPromptContext(promptId, model, parameters);
     }
   }
 
@@ -207,6 +284,8 @@ export type {
   KliraConfig,
   GuardrailOptions,
   TraceMetadata,
+  HierarchyContext,
+  ConversationContext,
   PolicyViolation,
   GuardrailResult,
   SpanAttributes,

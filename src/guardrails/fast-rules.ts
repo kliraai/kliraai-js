@@ -4,6 +4,8 @@
 
 import type { PolicyRule, PolicyViolation, Logger } from '../types/index.js';
 import { getLogger } from '../config/index.js';
+import { PolicyLoader, PolicyCache } from './policy-loader.js';
+import { PolicyDefinition, CompiledPolicy, PolicyEvaluationResult } from '../types/policies.js';
 
 export interface FastRulePattern {
   id: string;
@@ -16,10 +18,16 @@ export interface FastRulePattern {
 
 export class FastRulesEngine {
   private rules: FastRulePattern[] = [];
+  private policies: CompiledPolicy[] = [];
+  private policyLoader: PolicyLoader;
+  private policyCache: PolicyCache;
   private logger: Logger;
+  private initialized: boolean = false;
 
   constructor() {
     this.logger = getLogger();
+    this.policyLoader = new PolicyLoader();
+    this.policyCache = new PolicyCache();
     this.initializeDefaultRules();
   }
 
@@ -130,7 +138,147 @@ export class FastRulesEngine {
   }
 
   /**
-   * Evaluate content against all rules
+   * Initialize with YAML policies
+   */
+  async initialize(configPath?: string): Promise<void> {
+    try {
+      const policyFile = configPath 
+        ? await this.policyLoader.loadFromYAML(configPath)
+        : await this.policyLoader.loadDefault();
+      
+      this.policies = this.policyLoader.compilePolicies(policyFile.policies);
+      this.initialized = true;
+      
+      this.logger.debug(`Initialized FastRulesEngine with ${this.policies.length} YAML policies`);
+    } catch (error) {
+      this.logger.warn(`Failed to load YAML policies, using hardcoded rules: ${error}`);
+      // Keep using hardcoded rules as fallback
+    }
+  }
+
+  /**
+   * Evaluate content with direction awareness (inbound/outbound)
+   */
+  evaluateWithDirection(content: string, direction: 'inbound' | 'outbound'): PolicyEvaluationResult {
+    const startTime = Date.now();
+    
+    // If YAML policies are loaded, use them
+    if (this.initialized && this.policies.length > 0) {
+      return this.evaluateYAMLPolicies(content, direction, startTime);
+    }
+    
+    // Fallback to legacy hardcoded rules
+    return this.evaluateLegacyRules(content, startTime);
+  }
+
+  /**
+   * Evaluate content against YAML policies
+   */
+  private evaluateYAMLPolicies(content: string, direction: 'inbound' | 'outbound', startTime: number): PolicyEvaluationResult {
+    const violations: PolicyViolation[] = [];
+    let transformedContent = content;
+    let blocked = false;
+    const matchedPolicies: string[] = [];
+
+    // Filter policies by direction
+    const applicablePolicies = this.policies.filter(policy => 
+      policy.direction === 'both' || policy.direction === direction
+    );
+
+    for (const policy of applicablePolicies) {
+      let policyMatched = false;
+      
+      // Check compiled regex patterns
+      if (policy.compiledPatterns) {
+        for (const pattern of policy.compiledPatterns) {
+          const matches = content.match(pattern);
+          if (matches) {
+            policyMatched = true;
+            this.addPolicyViolation(violations, policy, matches, 'pattern');
+            
+            if (policy.action === 'block') {
+              blocked = true;
+            }
+            break;
+          }
+        }
+      }
+      
+      // Check domain patterns
+      if (!policyMatched && policy.domainPatterns) {
+        for (const domainPattern of policy.domainPatterns) {
+          const matches = content.match(domainPattern);
+          if (matches) {
+            policyMatched = true;
+            this.addPolicyViolation(violations, policy, matches, 'domain');
+            
+            if (policy.action === 'block') {
+              blocked = true;
+            }
+            break;
+          }
+        }
+      }
+      
+      if (policyMatched) {
+        matchedPolicies.push(policy.id);
+      }
+    }
+
+    return {
+      violations,
+      blocked,
+      transformedContent,
+      matchedPolicies,
+      processingTime: Date.now() - startTime,
+    };
+  }
+
+  /**
+   * Add policy violation from YAML policy match
+   */
+  private addPolicyViolation(
+    violations: PolicyViolation[], 
+    policy: CompiledPolicy, 
+    matches: RegExpMatchArray, 
+    matchType: 'pattern' | 'domain'
+  ): void {
+    const violation: PolicyViolation = {
+      ruleId: policy.id,
+      message: policy.description,
+      severity: policy.severity || 'medium',
+      blocked: policy.action === 'block',
+      matched: matches[0],
+    };
+    
+    if (matches.index !== undefined) {
+      violation.position = {
+        start: matches.index,
+        end: matches.index + matches[0].length,
+      };
+    }
+    
+    violations.push(violation);
+    this.logger.debug(`Policy ${policy.id} triggered (${matchType}): ${matches[0]}`);
+  }
+
+  /**
+   * Evaluate content against legacy hardcoded rules
+   */
+  private evaluateLegacyRules(content: string, startTime: number): PolicyEvaluationResult {
+    const legacyResult = this.evaluate(content);
+    
+    return {
+      violations: legacyResult.violations,
+      blocked: legacyResult.blocked,
+      transformedContent: legacyResult.transformedContent,
+      matchedPolicies: legacyResult.violations.map(v => v.ruleId),
+      processingTime: Date.now() - startTime,
+    };
+  }
+
+  /**
+   * Evaluate content against all rules (legacy method)
    */
   evaluate(content: string): {
     violations: PolicyViolation[];
@@ -223,5 +371,30 @@ export class FastRulesEngine {
         }
       }
     }
+  }
+
+  /**
+   * Reload policies from YAML (for dynamic updates)
+   */
+  async reloadPolicies(configPath?: string): Promise<void> {
+    this.policyCache.clear();
+    await this.initialize(configPath);
+  }
+
+  /**
+   * Get loaded policy count
+   */
+  getPolicyCount(): { yaml: number; legacy: number } {
+    return {
+      yaml: this.policies.length,
+      legacy: this.rules.length,
+    };
+  }
+
+  /**
+   * Check if YAML policies are loaded
+   */
+  isYAMLInitialized(): boolean {
+    return this.initialized && this.policies.length > 0;
   }
 }

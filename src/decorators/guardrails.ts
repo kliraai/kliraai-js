@@ -13,8 +13,8 @@ import { KliraMetrics } from '../observability/metrics.js';
  * Guardrails decorator for TypeScript
  */
 export function guardrails(options: GuardrailOptions = {}) {
-  return function <T extends AnyFunction>(
-    target: any,
+  return function <_T extends AnyFunction>(
+    _target: any,
     propertyKey: string | symbol,
     descriptor: PropertyDescriptor
   ): PropertyDescriptor {
@@ -159,7 +159,7 @@ export function guardrails(options: GuardrailOptions = {}) {
 /**
  * Extract input content for guardrail evaluation
  */
-function extractInputContent(args: any[], options: GuardrailOptions): string | null {
+function extractInputContent(args: any[], _options: GuardrailOptions): string | null {
   // Strategy 1: Look for common input patterns
   for (const arg of args) {
     if (typeof arg === 'string') {
@@ -198,7 +198,7 @@ function extractInputContent(args: any[], options: GuardrailOptions): string | n
 /**
  * Extract output content for guardrail evaluation
  */
-function extractOutputContent(result: any, options: GuardrailOptions): string | null {
+function extractOutputContent(result: any, _options: GuardrailOptions): string | null {
   if (typeof result === 'string') {
     return result;
   }
@@ -232,7 +232,7 @@ function extractOutputContent(result: any, options: GuardrailOptions): string | 
 function applyInputTransformations(
   args: any[], 
   transformedContent: string, 
-  options: GuardrailOptions
+  _options: GuardrailOptions
 ): any[] {
   const newArgs = [...args];
   
@@ -290,7 +290,7 @@ function applyInputTransformations(
 function applyPromptAugmentation(
   args: any[], 
   guidelines: string[], 
-  options: GuardrailOptions
+  _options: GuardrailOptions
 ): any[] {
   if (guidelines.length === 0) {
     return args;
