@@ -5,8 +5,7 @@
 
 import type { 
   GuardrailOptions, 
-  TraceMetadata, 
-  GuardrailResult,
+  TraceMetadata,
   Logger,
 } from '../../types/index.js';
 import { getLogger } from '../../config/index.js';
@@ -77,8 +76,8 @@ export class KliraAgent {
   private tracing: KliraTracing | null = null;
   private metrics: KliraMetrics | null = null;
   private provider: LLMProvider;
-  private mcpProtection: ReturnType<typeof getMCPProtection> | null = null;
-  private auditLog: ReturnType<typeof getSecurityAuditLog> | null = null;
+  // private mcpProtection: ReturnType<typeof getMCPProtection> | null = null;
+  // private auditLog: ReturnType<typeof getSecurityAuditLog> | null = null;
 
   // Async initialization state
   private _initialized = false;
@@ -456,7 +455,7 @@ export class KliraAgent {
             `Output blocked by Klira guardrails: ${result.reason}`,
             result.violations
           );
-        } else if (this.options.onOutputViolation === 'filter') {
+        } else if (this.options.onOutputViolation === 'redact') {
           // Replace content with filtered message
           response.content = '[Content filtered by Klira AI guardrails]';
         }
@@ -516,7 +515,7 @@ export class KliraAgent {
         } else {
           // Add new system message at the beginning
           messages.unshift({
-            role: 'system',
+            role: 'system' as const,
             content: guidelinesMessage.trim(),
           });
         }
@@ -718,10 +717,8 @@ export class FunctionLLMProvider implements LLMProvider {
 }
 
 // Re-export types for convenience
-export type {
-  KliraAgentOptions,
-  LLMMessage,
-  LLMRequest,
-  LLMResponse,
-  LLMProvider,
-};
+export type { KliraAgentOptions };
+export type { LLMMessage };
+export type { LLMRequest };
+export type { LLMResponse };
+export type { LLMProvider };

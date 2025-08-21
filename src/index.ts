@@ -8,7 +8,6 @@ import type {
   GuardrailOptions, 
   TraceMetadata,
   HierarchyContext,
-  ConversationContext,
   Logger 
 } from './types/index.js';
 import { 
@@ -285,7 +284,6 @@ export type {
   GuardrailOptions,
   TraceMetadata,
   HierarchyContext,
-  ConversationContext,
   PolicyViolation,
   GuardrailResult,
   SpanAttributes,
