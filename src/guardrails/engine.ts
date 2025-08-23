@@ -6,7 +6,8 @@ import type {
   PolicyViolation, 
   GuardrailResult, 
   GuardrailOptions, 
-  Logger 
+  Logger,
+  PolicyUsageInfo
 } from '../types/index.js';
 import { getLogger } from '../config/index.js';
 import { FastRulesEngine } from './fast-rules.js';
@@ -119,6 +120,10 @@ export class GuardrailsEngine {
       await this.initialize();
     }
 
+    const startTime = Date.now();
+    const evaluatedPolicies: string[] = [];
+    const triggeredPolicies: string[] = [];
+
     try {
       const violations: PolicyViolation[] = [];
       let transformedContent = content;
@@ -130,7 +135,20 @@ export class GuardrailsEngine {
           ? this.fastRules.evaluateWithDirection(content, 'inbound')
           : this.fastRules.evaluate(content);
           
-        violations.push(...fastResult.violations);
+        // Track which policies were evaluated
+        const fastPolicies = this.fastRules.getPolicyIds();
+        evaluatedPolicies.push(...fastPolicies);
+        
+        // Track triggered policies
+        const violatedPolicies = fastResult.violations.map(v => v.ruleId);
+        triggeredPolicies.push(...violatedPolicies);
+        
+        violations.push(...fastResult.violations.map(v => ({
+          ...v,
+          direction: 'input',
+          timestamp: Date.now(),
+        })));
+        
         transformedContent = 'transformedContent' in fastResult 
           ? fastResult.transformedContent 
           : content;
@@ -148,7 +166,18 @@ export class GuardrailsEngine {
         );
 
         if (llmResult) {
-          violations.push(...llmResult.violations);
+          const llmPolicies = ['llm-content-safety', 'llm-policy-check'];
+          evaluatedPolicies.push(...llmPolicies);
+          
+          const llmTriggeredPolicies = llmResult.violations.map(v => v.ruleId);
+          triggeredPolicies.push(...llmTriggeredPolicies);
+          
+          violations.push(...llmResult.violations.map(v => ({
+            ...v,
+            direction: 'input',
+            timestamp: Date.now(),
+          })));
+          
           blocked = blocked || !llmResult.safe;
           
           if (llmResult.modifiedContent) {
@@ -166,6 +195,10 @@ export class GuardrailsEngine {
         this.logger.debug(`Generated ${guidelines.length} augmentation guidelines`);
       }
 
+      const duration = Date.now() - startTime;
+      const uniqueTriggeredPolicies = [...new Set(triggeredPolicies)];
+      const uniqueEvaluatedPolicies = [...new Set(evaluatedPolicies)];
+
       return {
         allowed: !blocked,
         blocked,
@@ -173,9 +206,20 @@ export class GuardrailsEngine {
         transformedInput: transformedContent !== content ? transformedContent : undefined,
         guidelines,
         reason: this.createReasonMessage(violations, blocked),
+        evaluationDuration: duration,
+        triggeredPolicies: uniqueTriggeredPolicies,
+        direction: 'input',
+        policyUsage: {
+          evaluatedPolicies: uniqueEvaluatedPolicies,
+          triggeredPolicies: uniqueTriggeredPolicies,
+          evaluationCount: uniqueEvaluatedPolicies.length,
+          direction: 'input',
+          duration,
+        },
       };
 
     } catch (error) {
+      const duration = Date.now() - startTime;
       this.logger.error(`Guardrails evaluation failed: ${error}`);
       
       // Handle failure based on failure mode
@@ -188,9 +232,14 @@ export class GuardrailsEngine {
             message: 'Guardrails evaluation failed',
             severity: 'high',
             blocked: true,
+            direction: 'input',
+            timestamp: Date.now(),
             metadata: { error: String(error) },
           }],
           reason: 'System error - blocking for safety',
+          evaluationDuration: duration,
+          triggeredPolicies: ['system-error'],
+          direction: 'input',
         };
       } else {
         return {
@@ -198,6 +247,9 @@ export class GuardrailsEngine {
           blocked: false,
           violations: [],
           reason: 'System error - allowing with warning',
+          evaluationDuration: duration,
+          triggeredPolicies: [],
+          direction: 'input',
         };
       }
     }
@@ -214,6 +266,10 @@ export class GuardrailsEngine {
       await this.initialize();
     }
 
+    const startTime = Date.now();
+    const evaluatedPolicies: string[] = [];
+    const triggeredPolicies: string[] = [];
+
     try {
       const violations: PolicyViolation[] = [];
       let transformedContent = content;
@@ -224,8 +280,21 @@ export class GuardrailsEngine {
         const fastResult = this.fastRules.isYAMLInitialized() 
           ? this.fastRules.evaluateWithDirection(content, 'outbound')
           : this.fastRules.evaluate(content);
-          
-        violations.push(...fastResult.violations);
+        
+        // Track which policies were evaluated
+        const fastPolicies = this.fastRules.getPolicyIds();
+        evaluatedPolicies.push(...fastPolicies);
+        
+        // Track triggered policies
+        const violatedPolicies = fastResult.violations.map(v => v.ruleId);
+        triggeredPolicies.push(...violatedPolicies);
+        
+        violations.push(...fastResult.violations.map(v => ({
+          ...v,
+          direction: 'output',
+          timestamp: Date.now(),
+        })));
+        
         transformedContent = 'transformedContent' in fastResult 
           ? fastResult.transformedContent 
           : content;
@@ -243,7 +312,18 @@ export class GuardrailsEngine {
         );
 
         if (llmResult) {
-          violations.push(...llmResult.violations);
+          const llmPolicies = ['llm-content-safety', 'llm-policy-check'];
+          evaluatedPolicies.push(...llmPolicies);
+          
+          const llmTriggeredPolicies = llmResult.violations.map(v => v.ruleId);
+          triggeredPolicies.push(...llmTriggeredPolicies);
+          
+          violations.push(...llmResult.violations.map(v => ({
+            ...v,
+            direction: 'output',
+            timestamp: Date.now(),
+          })));
+          
           blocked = blocked || !llmResult.safe;
           
           if (llmResult.modifiedContent) {
@@ -261,6 +341,10 @@ export class GuardrailsEngine {
         this.logger.debug(`Generated ${guidelines.length} augmentation guidelines`);
       }
 
+      const duration = Date.now() - startTime;
+      const uniqueTriggeredPolicies = [...new Set(triggeredPolicies)];
+      const uniqueEvaluatedPolicies = [...new Set(evaluatedPolicies)];
+
       return {
         allowed: !blocked,
         blocked,
@@ -268,9 +352,20 @@ export class GuardrailsEngine {
         transformedInput: transformedContent !== content ? transformedContent : undefined,
         guidelines,
         reason: this.createReasonMessage(violations, blocked),
+        evaluationDuration: duration,
+        triggeredPolicies: uniqueTriggeredPolicies,
+        direction: 'output',
+        policyUsage: {
+          evaluatedPolicies: uniqueEvaluatedPolicies,
+          triggeredPolicies: uniqueTriggeredPolicies,
+          evaluationCount: uniqueEvaluatedPolicies.length,
+          direction: 'output',
+          duration,
+        },
       };
 
     } catch (error) {
+      const duration = Date.now() - startTime;
       this.logger.error(`Output guardrails evaluation failed: ${error}`);
       
       // Handle failure based on failure mode
@@ -283,9 +378,14 @@ export class GuardrailsEngine {
             message: 'Output guardrails evaluation failed',
             severity: 'high',
             blocked: true,
+            direction: 'output',
+            timestamp: Date.now(),
             metadata: { error: String(error) },
           }],
           reason: 'System error - blocking for safety',
+          evaluationDuration: duration,
+          triggeredPolicies: ['system-error'],
+          direction: 'output',
         };
       } else {
         return {
@@ -293,6 +393,9 @@ export class GuardrailsEngine {
           blocked: false,
           violations: [],
           reason: 'System error - allowing with warning',
+          evaluationDuration: duration,
+          triggeredPolicies: [],
+          direction: 'output',
         };
       }
     }

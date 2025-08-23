@@ -22,6 +22,12 @@
     "forceConsistentCasingInFileNames": true,
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
+    /* Decorator Configuration:
+     * - experimentalDecorators: true enables legacy TypeScript decorators (used with tsc)
+     * - TC39 decorators are used automatically with tsx/esbuild (modern standard)
+     * - The @guardrails decorator supports both standards with automatic detection
+     * - Runtime compatibility is handled by dual return types and context detection
+     */
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true

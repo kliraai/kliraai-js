@@ -476,6 +476,45 @@ export class KliraAgent {
   }
 
   /**
+   * Record comprehensive guardrail violations in metrics and tracing
+   */
+  private recordViolations(
+    result: GuardrailResult,
+    metadata: TraceMetadata,
+    options?: KliraAgentOptions
+  ): void {
+    // Record in metrics (legacy)
+    for (const violation of result.violations) {
+      this.metrics?.recordGuardrailViolation(
+        violation.ruleId,
+        violation.severity,
+        metadata
+      );
+    }
+
+    // Enhanced compliance recording in tracing
+    if (this.tracing && result.violations.length > 0) {
+      const complianceMetadata: ComplianceMetadata = {
+        agentName: metadata.agentName || 'custom-agent',
+        agentVersion: metadata.agentVersion || '1.0.0',
+        enforcementMode: options?.enforcementMode || 'monitor',
+        customTags: options?.customTags,
+        organizationId: metadata.organizationId,
+        projectId: metadata.projectId,
+        evaluationTimestamp: Date.now(),
+      };
+
+      // Record policy violations with comprehensive compliance data
+      this.tracing.recordPolicyViolations(result.violations, result, complianceMetadata);
+      
+      // Record policy usage tracking
+      if (result.policyUsage) {
+        this.tracing.recordPolicyUsage(result.policyUsage);
+      }
+    }
+  }
+
+  /**
    * Augment system message with policy guidelines
    */
   private async augmentSystemMessage(

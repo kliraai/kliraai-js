@@ -392,6 +392,15 @@ export class FastRulesEngine {
   }
 
   /**
+   * Get all policy IDs (for compliance tracking)
+   */
+  getPolicyIds(): string[] {
+    const yamlPolicyIds = this.policies.map(policy => policy.id);
+    const legacyRuleIds = this.rules.map(rule => rule.id);
+    return [...yamlPolicyIds, ...legacyRuleIds];
+  }
+
+  /**
    * Check if YAML policies are loaded
    */
   isYAMLInitialized(): boolean {

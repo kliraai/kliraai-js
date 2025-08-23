@@ -18,7 +18,7 @@ describe('Publishing Configuration', () => {
 
   describe('Package Metadata', () => {
     it('should have required package fields', () => {
-      expect(packageJson.name).toBe('@kliraai/sdk');
+      expect(packageJson.name).toBe('klira');
       expect(packageJson.version).toMatch(/^\d+\.\d+\.\d+/);
       expect(packageJson.description).toContain('Klira AI');
       expect(packageJson.license).toBe('MIT');
@@ -241,7 +241,7 @@ describe('Publishing Configuration', () => {
 
     it('should have consistent naming', () => {
       // Package name should match repository
-      expect(packageJson.name).toBe('@kliraai/sdk');
+      expect(packageJson.name).toBe('klira');
       expect(packageJson.repository.url).toContain('kliraai-js');
     });
 
@@ -262,7 +262,7 @@ describe('Publishing Configuration', () => {
     });
 
     it('should have proper package scope', () => {
-      expect(packageJson.name).toMatch(/^@kliraai\//);
+      expect(packageJson.name).toBe('klira');
     });
 
     it('should not include private field (should be publishable)', () => {

@@ -61,7 +61,8 @@ export class KliraAI {
         KliraAI.tracing = KliraTracing.fromKliraConfig(config);
         await KliraAI.tracing.initialize();
         
-        KliraAI.metrics = KliraMetrics.getInstance();
+        KliraAI.metrics = KliraMetrics.fromKliraConfig(config);
+        await KliraAI.metrics.initialize();
         KliraAI.logger.debug('Observability initialized');
       }
 
@@ -257,6 +258,10 @@ export class KliraAI {
     try {
       if (KliraAI.tracing) {
         await KliraAI.tracing.shutdown();
+      }
+
+      if (KliraAI.metrics) {
+        await KliraAI.metrics.shutdown();
       }
 
       KliraAI.initialized = false;

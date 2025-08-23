@@ -2,8 +2,8 @@
  * Multi-framework integration example for Klira AI SDK
  */
 
-import { KliraAI, guardrails } from '@kliraai/sdk';
-import { createKliraVercelAI } from '@kliraai/sdk/vercel-ai';
+import { KliraAI, guardrails } from 'klira';
+import { createKliraVercelAI } from 'klira/vercel-ai';
 import { openai } from '@ai-sdk/openai';
 import { generateText, streamText } from 'ai';
 

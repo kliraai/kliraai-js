@@ -8,6 +8,7 @@ import type {
   TraceMetadata, 
   GuardrailResult,
   Logger,
+  ComplianceMetadata,
 } from '../../types/index.js';
 import { getLogger } from '../../config/index.js';
 import { GuardrailsEngine } from '../../guardrails/engine.js';
@@ -492,16 +493,15 @@ export class KliraOpenAI {
             }
           }
 
-          // Record violations for monitoring
-          if (result.violations.length > 0 && this.metrics) {
-            result.violations.forEach(violation => {
-              this.metrics!.recordGuardrailViolation(violation.ruleId, violation.severity, {
-                framework: 'openai',
-                operation: 'input_check',
-                provider: 'openai',
-                requestId,
-              });
-            });
+          // Record violations for comprehensive compliance tracking
+          if (result.violations.length > 0) {
+            this.recordViolations(result, {
+              framework: 'openai',
+              provider: 'openai',
+              requestId,
+              agentName: 'openai-agent',
+              agentVersion: '1.0.0',
+            }, this.options);
           }
         }
         }
@@ -581,17 +581,55 @@ export class KliraOpenAI {
           }
         }
 
-        // Record violations for monitoring
-        if (result.violations.length > 0 && this.metrics) {
-          result.violations.forEach(violation => {
-            this.metrics!.recordGuardrailViolation(violation.ruleId, violation.severity, {
-              framework: 'openai',
-              operation: 'output_check',
-              provider: 'openai',
-              requestId,
-            });
-          });
+        // Record violations for comprehensive compliance tracking
+        if (result.violations.length > 0) {
+          this.recordViolations(result, {
+            framework: 'openai',
+            provider: 'openai',
+            requestId,
+            agentName: 'openai-agent',
+            agentVersion: '1.0.0',
+          }, this.options);
         }
+      }
+    }
+  }
+
+  /**
+   * Record comprehensive guardrail violations in metrics and tracing
+   */
+  private recordViolations(
+    result: GuardrailResult,
+    metadata: TraceMetadata,
+    options?: KliraOpenAIOptions
+  ): void {
+    // Record in metrics (legacy)
+    for (const violation of result.violations) {
+      this.metrics?.recordGuardrailViolation(
+        violation.ruleId,
+        violation.severity,
+        metadata
+      );
+    }
+
+    // Enhanced compliance recording in tracing
+    if (this.tracing && result.violations.length > 0) {
+      const complianceMetadata: ComplianceMetadata = {
+        agentName: metadata.agentName || 'openai-agent',
+        agentVersion: metadata.agentVersion || '1.0.0',
+        enforcementMode: options?.enforcementMode || 'monitor',
+        customTags: options?.customTags,
+        organizationId: metadata.organizationId,
+        projectId: metadata.projectId,
+        evaluationTimestamp: Date.now(),
+      };
+
+      // Record policy violations with comprehensive compliance data
+      this.tracing.recordPolicyViolations(result.violations, result, complianceMetadata);
+      
+      // Record policy usage tracking
+      if (result.policyUsage) {
+        this.tracing.recordPolicyUsage(result.policyUsage);
       }
     }
   }

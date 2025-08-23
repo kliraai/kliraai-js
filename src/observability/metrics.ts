@@ -3,7 +3,12 @@
  */
 
 import { metrics, type Counter, type Histogram, type Gauge } from '@opentelemetry/api';
-import type { TraceMetadata, Logger } from '../types/index.js';
+import { NodeSDK } from '@opentelemetry/sdk-node';
+import { MeterProvider, PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
+import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http';
+import { Resource } from '@opentelemetry/resources';
+import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
+import type { TraceMetadata, Logger, KliraConfig } from '../types/index.js';
 import { getLogger } from '../config/index.js';
 
 export interface MetricsCollector {
@@ -22,10 +27,23 @@ export interface MetricsCollector {
   recordGuardrailCheck(operation: string, durationMs: number, blocked: boolean): void;
 }
 
+export interface MetricsConfig {
+  serviceName: string;
+  serviceVersion: string;
+  endpoint?: string;
+  headers?: Record<string, string>;
+  enabled?: boolean;
+  exportIntervalMs?: number;
+}
+
 export class KliraMetrics implements MetricsCollector {
   private static instance: KliraMetrics | null = null;
   private meter = metrics.getMeter('klira-ai-sdk', '0.1.0');
   private logger: Logger;
+  private meterProvider: MeterProvider | null = null;
+  private metricReader: PeriodicExportingMetricReader | null = null;
+  private initialized: boolean = false;
+  private config: MetricsConfig | null = null;
 
   // Counters
   private requestCounter!: Counter;
@@ -43,25 +61,100 @@ export class KliraMetrics implements MetricsCollector {
   // Gauges
   private activeRequestsGauge!: Gauge;
 
-  private constructor() {
+  private constructor(config?: MetricsConfig) {
     this.logger = getLogger();
-    this.initializeMetrics();
+    this.config = config || null;
+    this.initializeInstruments();
   }
 
   /**
    * Get singleton instance
    */
-  static getInstance(): KliraMetrics {
+  static getInstance(config?: MetricsConfig): KliraMetrics {
     if (!KliraMetrics.instance) {
-      KliraMetrics.instance = new KliraMetrics();
+      KliraMetrics.instance = new KliraMetrics(config);
     }
     return KliraMetrics.instance;
   }
 
   /**
+   * Create metrics instance from Klira config
+   */
+  static fromKliraConfig(kliraConfig: KliraConfig): KliraMetrics {
+    const metricsConfig: MetricsConfig = {
+      serviceName: kliraConfig.appName || 'klira-app',
+      serviceVersion: '0.1.0', // TODO: Get from package.json
+      endpoint: kliraConfig.openTelemetryEndpoint?.replace('/traces', '/metrics') || 'https://api.getklira.com/v1/metrics',
+      headers: kliraConfig.apiKey ? {
+        'Authorization': `Bearer ${kliraConfig.apiKey}`,
+      } : {},
+      enabled: kliraConfig.tracingEnabled ?? true,
+      exportIntervalMs: 30000, // Export every 30 seconds
+    };
+
+    return KliraMetrics.getInstance(metricsConfig);
+  }
+
+  /**
+   * Initialize metrics SDK with exporter
+   */
+  async initialize(): Promise<void> {
+    if (this.initialized || !this.config || !this.config.enabled) {
+      return;
+    }
+
+    try {
+      this.logger.info('Initializing OpenTelemetry metrics export...');
+
+      // Create resource
+      const resource = new Resource({
+        [ATTR_SERVICE_NAME]: this.config.serviceName,
+        [ATTR_SERVICE_VERSION]: this.config.serviceVersion,
+        'klira.sdk.name': 'klira',
+        'klira.sdk.version': '0.1.0',
+      });
+
+      // Create metrics exporter
+      const metricsExporter = new OTLPMetricExporter({
+        url: this.config.endpoint || 'https://api.getklira.com/v1/metrics',
+        headers: this.config.headers || {},
+      });
+
+      // Create metric reader with periodic export
+      this.metricReader = new PeriodicExportingMetricReader({
+        exporter: metricsExporter,
+        exportIntervalMillis: this.config.exportIntervalMs || 30000,
+        exportTimeoutMillis: 10000,
+      });
+
+      // Create meter provider
+      this.meterProvider = new MeterProvider({
+        resource,
+        readers: [this.metricReader],
+      });
+
+      // Set global meter provider
+      metrics.setGlobalMeterProvider(this.meterProvider);
+
+      // Update meter to use new provider
+      this.meter = metrics.getMeter('klira-ai-sdk', '0.1.0');
+
+      // Initialize instruments with new meter
+      this.initializeInstruments();
+
+      this.initialized = true;
+      this.logger.info('OpenTelemetry metrics export initialized successfully');
+    } catch (error) {
+      this.logger.error(`Failed to initialize metrics export: ${error}`);
+      // Continue without metrics export but still initialize instruments
+      this.initializeInstruments();
+    }
+  }
+
+  /**
    * Initialize metrics instruments
    */
-  private initializeMetrics(): void {
+  private initializeInstruments(): void {
     // Counters
     this.requestCounter = this.meter.createCounter('klira_requests_total', {
       description: 'Total number of requests processed',
@@ -320,6 +413,23 @@ export class KliraMetrics implements MetricsCollector {
     this.guardrailLatencyHistogram.record(durationMs, {
       operation,
     });
+  }
+
+  /**
+   * Check if metrics export is initialized
+   */
+  isInitialized(): boolean {
+    return this.initialized;
+  }
+
+  /**
+   * Shutdown metrics export
+   */
+  async shutdown(): Promise<void> {
+    if (this.metricReader) {
+      await this.metricReader.shutdown();
+      this.logger.info('OpenTelemetry metrics export shut down');
+    }
   }
 
   /**

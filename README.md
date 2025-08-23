@@ -11,20 +11,20 @@ The official JavaScript/TypeScript SDK for [Klira AI](https://klira.ai) - provid
 ### Installation
 
 ```bash
-npm install @kliraai/sdk
+npm install klira
 
 # For Vercel AI SDK integration (recommended)
-npm install @kliraai/sdk ai @ai-sdk/openai
+npm install klira ai @ai-sdk/openai
 
 # For LangChain.js integration
-npm install @kliraai/sdk @langchain/core @langchain/openai
+npm install klira @langchain/core @langchain/openai
 ```
 
 ### Basic Usage
 
 ```typescript
-import { KliraAI } from '@kliraai/sdk';
-import { createKliraVercelAI } from '@kliraai/sdk/vercel-ai';
+import { KliraAI } from 'klira';
+import { createKliraVercelAI } from 'klira/vercel-ai';
 import { generateText } from 'ai';
 import { openai } from '@ai-sdk/openai';
 
@@ -86,7 +86,7 @@ console.log(result.text); // Safe, compliant response
 The Vercel AI SDK is our primary integration target, offering the smoothest developer experience:
 
 ```typescript
-import { createKliraVercelAI } from '@kliraai/sdk/vercel-ai';
+import { createKliraVercelAI } from 'klira/vercel-ai';
 import { streamText } from 'ai';
 import { openai } from '@ai-sdk/openai';
 
@@ -110,7 +110,7 @@ for await (const chunk of stream({
 
 ```typescript
 import { ChatOpenAI } from '@langchain/openai';
-import { KliraCallbackHandler } from '@kliraai/sdk/langchain';
+import { KliraCallbackHandler } from 'klira/langchain';
 
 const model = new ChatOpenAI({
   callbacks: [new KliraCallbackHandler({
@@ -123,7 +123,7 @@ const model = new ChatOpenAI({
 ### OpenAI SDK Integration
 
 ```typescript
-import { KliraOpenAI } from '@kliraai/sdk/openai';
+import { KliraOpenAI } from 'klira/openai';
 
 const client = new KliraOpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -137,7 +137,7 @@ const client = new KliraOpenAI({
 Apply guardrails declaratively using TypeScript decorators:
 
 ```typescript
-import { guardrails } from '@kliraai/sdk';
+import { guardrails } from 'klira';
 
 class AIService {
   @guardrails({

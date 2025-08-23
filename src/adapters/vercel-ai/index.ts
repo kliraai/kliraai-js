@@ -9,6 +9,8 @@ import type {
   TraceMetadata, 
   GuardrailResult,
   Logger,
+  ComplianceMetadata,
+  VercelAIAdapterOptions,
 } from '../../types/index.js';
 import { getLogger } from '../../config/index.js';
 import { GuardrailsEngine } from '../../guardrails/engine.js';
@@ -54,11 +56,6 @@ interface AISDKResult {
   [key: string]: any;
 }
 
-export interface VercelAIAdapterOptions extends GuardrailOptions {
-  enableStreamingGuardrails?: boolean;
-  streamingCheckInterval?: number; // Check every N chunks
-  autoInstrumentation?: boolean;
-}
 
 export class VercelAIAdapter implements FrameworkAdapter {
   public readonly name = 'vercel-ai';
@@ -70,9 +67,32 @@ export class VercelAIAdapter implements FrameworkAdapter {
 
   constructor() {
     this.logger = getLogger();
-    this.guardrails = GuardrailsEngine.getInstance();
-    this.tracing = KliraTracing.getInstance();
-    this.metrics = KliraMetrics.getInstance();
+    // Lazy load these to avoid initialization order issues
+    this.guardrails = null as any;
+    this.tracing = null as any;
+    this.metrics = null as any;
+  }
+
+  private ensureInitialized() {
+    if (!this.guardrails) {
+      this.guardrails = GuardrailsEngine.getInstance();
+    }
+    if (!this.tracing) {
+      try {
+        this.tracing = KliraTracing.getInstance();
+      } catch (error) {
+        // Tracing not initialized - that's OK
+        this.tracing = null;
+      }
+    }
+    if (!this.metrics) {
+      try {
+        this.metrics = KliraMetrics.getInstance();
+      } catch (error) {
+        // Metrics not initialized - that's OK
+        this.metrics = null;
+      }
+    }
   }
 
   /**
@@ -123,6 +143,7 @@ export class VercelAIAdapter implements FrameworkAdapter {
    * Apply guardrails to input
    */
   async applyGuardrails(input: any, options: GuardrailOptions = {}): Promise<GuardrailResult> {
+    this.ensureInitialized();
     const content = this.extractContent(input);
     if (!content) {
       return {
@@ -140,6 +161,7 @@ export class VercelAIAdapter implements FrameworkAdapter {
    * Capture metrics and traces
    */
   async captureMetrics(metadata: TraceMetadata): Promise<void> {
+    this.ensureInitialized();
     if (this.metrics) {
       this.metrics.recordRequest(metadata);
     }
@@ -161,6 +183,7 @@ export class VercelAIAdapter implements FrameworkAdapter {
     options: VercelAIAdapterOptions
   ) {
     return async (params: AISDKGenerateTextParams): Promise<AISDKResult> => {
+      this.ensureInitialized();
       const startTime = Date.now();
       const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       
@@ -184,7 +207,7 @@ export class VercelAIAdapter implements FrameworkAdapter {
             );
 
             if (inputResult.blocked) {
-              this.recordViolations(inputResult, metadata);
+              this.recordViolations(inputResult, metadata, options);
               
               if (options.onInputViolation === 'exception') {
                 throw new KliraPolicyViolation(
@@ -212,7 +235,7 @@ export class VercelAIAdapter implements FrameworkAdapter {
             const outputResult = await this.guardrails.evaluateOutput(result.text, options);
             
             if (outputResult.blocked) {
-              this.recordViolations(outputResult, metadata);
+              this.recordViolations(outputResult, metadata, options);
               
               if (options.onOutputViolation === 'exception') {
                 throw new KliraPolicyViolation(
@@ -293,7 +316,7 @@ export class VercelAIAdapter implements FrameworkAdapter {
           );
 
           if (inputResult.blocked) {
-            self.recordViolations(inputResult, metadata);
+            self.recordViolations(inputResult, metadata, options);
             
             if (options.onInputViolation === 'exception') {
               throw new KliraPolicyViolation(
@@ -337,7 +360,7 @@ export class VercelAIAdapter implements FrameworkAdapter {
             const streamResult = await self.guardrails.evaluateOutput(accumulatedText, options);
             
             if (streamResult.blocked) {
-              self.recordViolations(streamResult, metadata);
+              self.recordViolations(streamResult, metadata, options);
               
               if (options.onOutputViolation === 'exception') {
                 throw new KliraPolicyViolation(
@@ -363,7 +386,7 @@ export class VercelAIAdapter implements FrameworkAdapter {
           const finalResult = await self.guardrails.evaluateOutput(accumulatedText, options);
           
           if (finalResult.blocked) {
-            self.recordViolations(finalResult, metadata);
+            self.recordViolations(finalResult, metadata, options);
             // Already streamed, so log the violation
             self.logger.warn(`Final stream output blocked: ${finalResult.reason}`);
           }
@@ -486,15 +509,41 @@ export class VercelAIAdapter implements FrameworkAdapter {
   }
 
   /**
-   * Record guardrail violations in metrics
+   * Record comprehensive guardrail violations in metrics and tracing
    */
-  private recordViolations(result: GuardrailResult, metadata: TraceMetadata): void {
+  private recordViolations(
+    result: GuardrailResult, 
+    metadata: TraceMetadata, 
+    options?: VercelAIAdapterOptions
+  ): void {
+    // Record in metrics (legacy)
     for (const violation of result.violations) {
       this.metrics?.recordGuardrailViolation(
         violation.ruleId,
         violation.severity,
         metadata
       );
+    }
+
+    // Enhanced compliance recording in tracing
+    if (this.tracing && result.violations.length > 0) {
+      const complianceMetadata: ComplianceMetadata = {
+        agentName: metadata.agentName || 'vercel-ai-agent',
+        agentVersion: metadata.agentVersion || '1.0.0',
+        enforcementMode: options?.enforcementMode || 'monitor',
+        customTags: options?.customTags,
+        organizationId: metadata.organizationId,
+        projectId: metadata.projectId,
+        evaluationTimestamp: Date.now(),
+      };
+
+      // Record policy violations with comprehensive compliance data
+      this.tracing.recordPolicyViolations(result.violations, result, complianceMetadata);
+      
+      // Record policy usage tracking
+      if (result.policyUsage) {
+        this.tracing.recordPolicyUsage(result.policyUsage);
+      }
     }
   }
 }

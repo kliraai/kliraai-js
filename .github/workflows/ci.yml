@@ -159,7 +159,7 @@ jobs:
               owner,
               repo,
               release_id: release.id,
-              body: `${release.body}\n\n🚀 Published to NPM: https://www.npmjs.com/package/@kliraai/sdk/v/${release.tag_name.replace('v', '')}`
+              body: `${release.body}\n\n🚀 Published to NPM: https://www.npmjs.com/package/klira/v/${release.tag_name.replace('v', '')}`
             });
 
   # Pre-release Publishing (for beta versions)

@@ -1,7 +1,7 @@
 {
-  "name": "@kliraai/sdk",
+  "name": "klira",
   "version": "0.1.0",
-  "description": "Klira AI JavaScript/TypeScript SDK for LLM observability, tracing, and guardrails",
+  "description": "Klira AI Compliance for GenAI - JavaScript/TypeScript SDK for LLM observability, tracing, and guardrails",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -52,6 +52,8 @@
     "example:langchain": "tsx examples/langchain-example.ts",
     "example:custom": "tsx examples/custom-agent-example.ts",
     "example:real-providers": "tsx examples/real-providers-demo.ts",
+    "example:performance": "tsx examples/performance-comparison.ts",
+    "example:simple-perf": "tsx examples/simple-performance-test.ts",
     "build:analyze": "NODE_ENV=production npm run build && npm run size",
     "build:prod": "NODE_ENV=production npm run build",
     "size": "size-limit",
@@ -84,9 +86,11 @@
   "dependencies": {
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/auto-instrumentations-node": "^0.50.0",
+    "@opentelemetry/exporter-metrics-otlp-http": "^0.203.0",
     "@opentelemetry/exporter-trace-otlp-http": "^0.53.0",
     "@opentelemetry/instrumentation": "^0.53.0",
     "@opentelemetry/resources": "^1.26.0",
+    "@opentelemetry/sdk-metrics": "^2.0.1",
     "@opentelemetry/sdk-node": "^0.53.0",
     "@opentelemetry/semantic-conventions": "^1.26.0",
     "js-yaml": "^4.1.0",
@@ -95,10 +99,10 @@
   "peerDependencies": {
     "@ai-sdk/anthropic": ">=0.0.1",
     "@ai-sdk/google": ">=0.0.1",
-    "@ai-sdk/openai": ">=0.0.1",
-    "@langchain/core": ">=0.2.0",
-    "@langchain/openai": ">=0.2.0",
-    "ai": ">=3.0.0",
+    "@ai-sdk/openai": "^2.0.19",
+    "@langchain/core": "^0.3.72",
+    "@langchain/openai": "^0.6.9",
+    "ai": "^5.0.22",
     "openai": "^5.13.1"
   },
   "peerDependenciesMeta": {

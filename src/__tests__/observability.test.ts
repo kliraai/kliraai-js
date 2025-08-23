@@ -67,7 +67,7 @@ describe('Observability', () => {
 
     it('should initialize tracing correctly', () => {
       expect(tracing).toBeInstanceOf(KliraTracing);
-      expect(mockTrace.getTracer).toHaveBeenCalledWith('@kliraai/sdk', expect.any(String));
+      expect(mockTrace.getTracer).toHaveBeenCalledWith('klira', expect.any(String));
     });
 
     it('should create spans for LLM calls', async () => {
@@ -194,7 +194,7 @@ describe('Observability', () => {
 
     it('should initialize metrics correctly', () => {
       expect(metrics).toBeInstanceOf(KliraMetrics);
-      expect(mockMetrics.getMeter).toHaveBeenCalledWith('@kliraai/sdk', expect.any(String));
+      expect(mockMetrics.getMeter).toHaveBeenCalledWith('klira', expect.any(String));
     });
 
     it('should track LLM request metrics', () => {
