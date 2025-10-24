@@ -22,7 +22,7 @@ export interface PolicyRule {
   name: string;
   description: string;
   pattern?: string;
-  action: 'block' | 'warn' | 'transform';
+  action: 'block' | 'warn' | 'allow';
   severity: 'low' | 'medium' | 'high' | 'critical';
 }
 
@@ -31,8 +31,19 @@ export interface PolicyViolation {
   message: string;
   severity: 'low' | 'medium' | 'high' | 'critical';
   blocked: boolean;
-  transformedContent?: string;
   metadata?: Record<string, any>;
+  // Additional compliance fields
+  description?: string;
+  policyName?: string;
+  category?: string;
+  direction?: 'input' | 'output' | string;  // Allow any string for flexibility
+  timestamp?: number;
+  // Fast rules matching fields
+  matched?: string;
+  position?: {
+    start: number;
+    end: number;
+  };
 }
 
 export interface GuardrailResult {
@@ -42,6 +53,11 @@ export interface GuardrailResult {
   transformedInput?: any;
   guidelines?: string[];
   reason?: string;
+  // Compliance metadata
+  evaluationDuration?: number;
+  triggeredPolicies?: string[];
+  policyUsage?: PolicyUsageInfo;
+  direction?: 'input' | 'output';
 }
 
 export interface GuardrailOptions {
@@ -54,6 +70,16 @@ export interface GuardrailOptions {
   outputViolationResponse?: string;
   injectionStrategy?: 'auto' | 'instructions' | 'completion';
   policies?: string[];
+  // Compliance tracking options
+  enforcementMode?: 'monitor' | 'enforce';
+  customTags?: Record<string, string>;
+  trackPolicyUsage?: boolean;
+}
+
+export interface VercelAIAdapterOptions extends GuardrailOptions {
+  enableStreamingGuardrails?: boolean;
+  streamingCheckInterval?: number; // Check every N chunks
+  autoInstrumentation?: boolean;
 }
 
 // Observability types
@@ -77,6 +103,10 @@ export interface TraceMetadata {
   model?: string;
   provider?: string;
   framework?: string;
+  
+  // Agent context for compliance
+  agentName?: string;
+  agentVersion?: string;
   
   // Additional metadata
   [key: string]: any;
@@ -120,6 +150,28 @@ export interface SpanAttributes {
   'klira.user_id'?: string;
   'klira.session_id'?: string;
   'klira.request_id'?: string;
+  
+  // Policy violation attributes (for compliance reporting)
+  'klira.policy.violation.ruleId'?: string;
+  'klira.policy.violation.severity'?: string;
+  'klira.policy.violation.description'?: string;
+  'klira.policy.violation.blocked'?: boolean;
+  'klira.policy.violation.category'?: string;
+  'klira.policy.violation.direction'?: string;
+  
+  // Policy usage tracking
+  'klira.policy.usage.triggeredPolicies'?: string[];
+  'klira.policy.usage.evaluationCount'?: number;
+  'klira.policy.usage.direction'?: string;
+  
+  // Agent and compliance context
+  'klira.agent.name'?: string;
+  'klira.agent.version'?: string;
+  'klira.policy.enforcement.mode'?: string;
+  'klira.guardrails.evaluation.duration_ms'?: number;
+  
+  // Custom compliance tags
+  'klira.compliance.tags'?: Record<string, string>;
   
   // Additional attributes
   [key: string]: any;
@@ -173,6 +225,40 @@ export class KliraInitializationError extends Error {
     super(message);
     this.name = 'KliraInitializationError';
   }
+}
+
+// Compliance types
+export interface PolicyUsageInfo {
+  evaluatedPolicies: string[];
+  triggeredPolicies: string[];
+  evaluationCount: number;
+  direction: 'input' | 'output';
+  duration?: number;
+}
+
+export interface ComplianceMetadata {
+  agentName?: string;
+  agentVersion?: string;
+  enforcementMode?: 'monitor' | 'enforce';
+  customTags?: Record<string, string>;
+  organizationId?: string;
+  projectId?: string;
+  evaluationTimestamp?: number;
+}
+
+export interface ViolationSpanEvent {
+  name: string;
+  attributes: {
+    'violation.ruleId': string;
+    'violation.severity': string;
+    'violation.message': string;
+    'violation.blocked': boolean;
+    'violation.description'?: string;
+    'violation.category'?: string;
+    'violation.direction': string;
+    'violation.timestamp': number;
+    'violation.policyName'?: string;
+  };
 }
 
 // Utility types

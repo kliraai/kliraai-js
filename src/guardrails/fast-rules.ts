@@ -5,15 +5,15 @@
 import type { PolicyRule, PolicyViolation, Logger } from '../types/index.js';
 import { getLogger } from '../config/index.js';
 import { PolicyLoader, PolicyCache } from './policy-loader.js';
-import { PolicyDefinition, CompiledPolicy, PolicyEvaluationResult } from '../types/policies.js';
+import { CompiledPolicy, PolicyEvaluationResult } from '../types/policies.js';
+import { FuzzyMatcher } from './fuzzy-matcher.js';
 
 export interface FastRulePattern {
   id: string;
   pattern: RegExp;
-  action: 'block' | 'warn' | 'transform';
+  action: 'block' | 'warn' | 'allow';
   severity: 'low' | 'medium' | 'high' | 'critical';
   description: string;
-  replacement?: string;
 }
 
 export class FastRulesEngine {
@@ -23,11 +23,13 @@ export class FastRulesEngine {
   private policyCache: PolicyCache;
   private logger: Logger;
   private initialized: boolean = false;
+  private fuzzyMatcher: FuzzyMatcher;
 
   constructor() {
     this.logger = getLogger();
     this.policyLoader = new PolicyLoader();
     this.policyCache = new PolicyCache();
+    this.fuzzyMatcher = new FuzzyMatcher();
     this.initializeDefaultRules();
   }
 
@@ -43,7 +45,6 @@ export class FastRulesEngine {
         action: 'block',
         severity: 'high',
         description: 'Email address detected',
-        replacement: '[EMAIL_REDACTED]',
       },
       {
         id: 'pii-ssn',
@@ -51,7 +52,6 @@ export class FastRulesEngine {
         action: 'block',
         severity: 'critical',
         description: 'Social Security Number pattern detected',
-        replacement: '[SSN_REDACTED]',
       },
       {
         id: 'pii-phone',
@@ -59,7 +59,6 @@ export class FastRulesEngine {
         action: 'warn',
         severity: 'medium',
         description: 'Phone number pattern detected',
-        replacement: '[PHONE_REDACTED]',
       },
       {
         id: 'pii-credit-card',
@@ -67,7 +66,6 @@ export class FastRulesEngine {
         action: 'block',
         severity: 'critical',
         description: 'Credit card number pattern detected',
-        replacement: '[CARD_REDACTED]',
       },
 
       // Content Safety
@@ -89,7 +87,7 @@ export class FastRulesEngine {
       // Prompt Injection
       {
         id: 'prompt-injection-ignore',
-        pattern: /ignore\s+(previous|all|the)\s+(instructions?|prompts?|rules?)/gi,
+        pattern: /ignore\s+(all\s+previous|previous|all|the)\s+(instructions?|prompts?|rules?)/gi,
         action: 'block',
         severity: 'high',
         description: 'Prompt injection attempt detected',
@@ -109,7 +107,6 @@ export class FastRulesEngine {
         action: 'block',
         severity: 'critical',
         description: 'Potential API key or secret detected',
-        replacement: '[SECRET_REDACTED]',
       },
     ];
 
@@ -211,7 +208,7 @@ export class FastRulesEngine {
           if (matches) {
             policyMatched = true;
             this.addPolicyViolation(violations, policy, matches, 'domain');
-            
+
             if (policy.action === 'block') {
               blocked = true;
             }
@@ -219,7 +216,53 @@ export class FastRulesEngine {
           }
         }
       }
-      
+
+      // NEW: Fuzzy matching layer (only if no regex/domain match)
+      if (!policyMatched && policy.domains && this.fuzzyMatcher.isEnabled()) {
+        const fuzzyMatches = this.fuzzyMatcher.checkFuzzyMatch(
+          content,
+          policy.domains,
+          70 // Threshold: 70% minimum
+        );
+
+        if (fuzzyMatches.length > 0) {
+          policyMatched = true;
+
+          // Get highest similarity match
+          const bestMatch = fuzzyMatches.reduce((prev, current) =>
+            current.similarity > prev.similarity ? current : prev
+          );
+
+          // Calculate confidence based on similarity
+          const confidence = this.fuzzyMatcher.calculateConfidence(bestMatch.similarity);
+
+          // Create violation with fuzzy match metadata
+          const violation: PolicyViolation = {
+            ruleId: policy.id,
+            message: `${policy.description} (fuzzy match: ${bestMatch.similarity}% similar to "${bestMatch.domain}")`,
+            severity: policy.severity || 'medium',
+            blocked: policy.action === 'block',
+            matched: bestMatch.matchedText,
+            metadata: {
+              matchType: 'fuzzy',
+              similarity: bestMatch.similarity,
+              confidence,
+              matchedDomain: bestMatch.domain,
+            },
+          };
+
+          violations.push(violation);
+          this.logger.debug(
+            `Policy ${policy.id} triggered via fuzzy matching (${bestMatch.similarity}% similarity)`
+          );
+
+          // Only block if confidence is high enough (≥90% similarity = 0.55 confidence)
+          if (policy.action === 'block' && confidence >= 0.55) {
+            blocked = true;
+          }
+        }
+      }
+
       if (policyMatched) {
         matchedPolicies.push(policy.id);
       }
@@ -286,12 +329,12 @@ export class FastRulesEngine {
     blocked: boolean;
   } {
     const violations: PolicyViolation[] = [];
-    let transformedContent = content;
+    const transformedContent = content; // Never modified - content is unchanged
     let blocked = false;
 
     for (const rule of this.rules) {
       const matches = content.match(rule.pattern);
-      
+
       if (matches) {
         this.logger.debug(`Rule ${rule.id} triggered with ${matches.length} matches`);
 
@@ -309,19 +352,17 @@ export class FastRulesEngine {
 
         violations.push(violation);
 
-        // Apply action
+        // Apply action (simplified - only track blocking)
         if (rule.action === 'block') {
           blocked = true;
-        } else if (rule.action === 'transform' && rule.replacement) {
-          transformedContent = transformedContent.replace(rule.pattern, rule.replacement);
-          violation.transformedContent = transformedContent;
         }
+        // 'warn' and 'allow' actions just create violations, don't block
       }
     }
 
     return {
       violations,
-      transformedContent,
+      transformedContent, // Always equals input content
       blocked,
     };
   }
@@ -392,9 +433,25 @@ export class FastRulesEngine {
   }
 
   /**
+   * Get all policy IDs (for compliance tracking)
+   */
+  getPolicyIds(): string[] {
+    const yamlPolicyIds = this.policies.map(policy => policy.id);
+    const legacyRuleIds = this.rules.map(rule => rule.id);
+    return [...yamlPolicyIds, ...legacyRuleIds];
+  }
+
+  /**
    * Check if YAML policies are loaded
    */
   isYAMLInitialized(): boolean {
     return this.initialized && this.policies.length > 0;
+  }
+
+  /**
+   * Get fuzzy matcher instance
+   */
+  getFuzzyMatcher(): FuzzyMatcher {
+    return this.fuzzyMatcher;
   }
 }

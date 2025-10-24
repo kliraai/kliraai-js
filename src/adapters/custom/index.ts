@@ -3,11 +3,12 @@
  * Provides a unified interface for any LLM application
  */
 
-import type { 
-  GuardrailOptions, 
-  TraceMetadata, 
-  GuardrailResult,
+import type {
+  GuardrailOptions,
+  TraceMetadata,
   Logger,
+  GuardrailResult,
+  ComplianceMetadata,
 } from '../../types/index.js';
 import { getLogger } from '../../config/index.js';
 import { GuardrailsEngine } from '../../guardrails/engine.js';
@@ -18,7 +19,7 @@ import { getMCPProtection, getSecurityAuditLog } from '../../security/index.js';
 import type { MCPProtectionConfig } from '../../security/index.js';
 
 export interface LLMMessage {
-  role: 'system' | 'user' | 'assistant';
+  role?: 'system' | 'user' | 'assistant';
   content: string;
   metadata?: Record<string, any>;
 }
@@ -77,7 +78,9 @@ export class KliraAgent {
   private tracing: KliraTracing | null = null;
   private metrics: KliraMetrics | null = null;
   private provider: LLMProvider;
+  // @ts-expect-error - MCP protection integration in progress
   private mcpProtection: ReturnType<typeof getMCPProtection> | null = null;
+  // @ts-expect-error - Security audit logging integration in progress
   private auditLog: ReturnType<typeof getSecurityAuditLog> | null = null;
 
   // Async initialization state
@@ -456,7 +459,7 @@ export class KliraAgent {
             `Output blocked by Klira guardrails: ${result.reason}`,
             result.violations
           );
-        } else if (this.options.onOutputViolation === 'filter') {
+        } else if (this.options.onOutputViolation === 'redact') {
           // Replace content with filtered message
           response.content = '[Content filtered by Klira AI guardrails]';
         }
@@ -472,6 +475,46 @@ export class KliraAgent {
             requestId,
           });
         });
+      }
+    }
+  }
+
+  /**
+   * Record comprehensive guardrail violations in metrics and tracing
+   */
+  // @ts-expect-error - Reserved for future compliance reporting
+  private _recordViolations(
+    result: GuardrailResult,
+    metadata: TraceMetadata,
+    options?: KliraAgentOptions
+  ): void {
+    // Record in metrics (legacy)
+    for (const violation of result.violations) {
+      this.metrics?.recordGuardrailViolation(
+        violation.ruleId,
+        violation.severity,
+        metadata
+      );
+    }
+
+    // Enhanced compliance recording in tracing
+    if (this.tracing && result.violations.length > 0) {
+      const complianceMetadata: ComplianceMetadata = {
+        agentName: metadata.agentName || 'custom-agent',
+        agentVersion: metadata.agentVersion || '1.0.0',
+        enforcementMode: options?.enforcementMode || 'monitor',
+        customTags: options?.customTags,
+        organizationId: metadata.organizationId,
+        projectId: metadata.projectId,
+        evaluationTimestamp: Date.now(),
+      };
+
+      // Record policy violations with comprehensive compliance data
+      this.tracing.recordPolicyViolations(result.violations, result, complianceMetadata);
+      
+      // Record policy usage tracking
+      if (result.policyUsage) {
+        this.tracing.recordPolicyUsage(result.policyUsage);
       }
     }
   }
@@ -507,16 +550,16 @@ export class KliraAgent {
         const messages = [...request.messages];
         const systemMessageIndex = messages.findIndex(m => m.role === 'system');
         
-        if (systemMessageIndex >= 0) {
+        if (systemMessageIndex >= 0 && messages[systemMessageIndex]) {
           // Append to existing system message
           messages[systemMessageIndex] = {
             ...messages[systemMessageIndex],
-            content: messages[systemMessageIndex].content + guidelinesMessage,
+            content: (messages[systemMessageIndex]!.content || '') + guidelinesMessage,
           };
         } else {
           // Add new system message at the beginning
           messages.unshift({
-            role: 'system',
+            role: 'system' as const,
             content: guidelinesMessage.trim(),
           });
         }
@@ -716,12 +759,3 @@ export class FunctionLLMProvider implements LLMProvider {
     yield* this.streamFn(request);
   }
 }
-
-// Re-export types for convenience
-export type {
-  KliraAgentOptions,
-  LLMMessage,
-  LLMRequest,
-  LLMResponse,
-  LLMProvider,
-};

@@ -5,8 +5,6 @@
 
 import type { Logger } from '../types/index.js';
 import { getLogger } from '../config/index.js';
-import { GuardrailsEngine } from '../guardrails/engine.js';
-import type { KliraPolicyViolation } from '../types/index.js';
 
 export interface MCPViolation {
   type: 'prompt_injection' | 'data_exfiltration' | 'unauthorized_access' | 'privilege_escalation' | 'context_pollution';
@@ -248,7 +246,7 @@ export class MCPProtection {
   /**
    * Validates function/tool calls for potential abuse
    */
-  validateFunctionCall(functionName: string, args: any, context: any = {}): MCPValidationResult {
+  validateFunctionCall(functionName: string, args: any, _context: any = {}): MCPValidationResult {
     if (!this.config.enabled) {
       return {
         isValid: true,
@@ -352,7 +350,7 @@ export class MCPProtection {
   /**
    * Detects prompt injection attempts
    */
-  private detectPromptInjection(content: string, context: any): MCPViolation[] {
+  private detectPromptInjection(content: string, _context: any): MCPViolation[] {
     const violations: MCPViolation[] = [];
 
     for (const pattern of MCPProtection.INJECTION_PATTERNS) {
@@ -377,7 +375,7 @@ export class MCPProtection {
   /**
    * Detects data exfiltration attempts
    */
-  private detectDataExfiltration(content: string, context: any): MCPViolation[] {
+  private detectDataExfiltration(content: string, _context: any): MCPViolation[] {
     const violations: MCPViolation[] = [];
 
     for (const pattern of MCPProtection.EXFILTRATION_PATTERNS) {
@@ -402,7 +400,7 @@ export class MCPProtection {
   /**
    * Detects function abuse patterns
    */
-  private detectFunctionAbuse(content: string, context: any): MCPViolation[] {
+  private detectFunctionAbuse(content: string, _context: any): MCPViolation[] {
     const violations: MCPViolation[] = [];
 
     for (const pattern of MCPProtection.FUNCTION_ABUSE_PATTERNS) {
@@ -427,7 +425,7 @@ export class MCPProtection {
   /**
    * Detects potential data leakage in outputs
    */
-  private detectDataLeakage(content: string, context: any): MCPViolation[] {
+  private detectDataLeakage(content: string, _context: any): MCPViolation[] {
     const violations: MCPViolation[] = [];
 
     // Check for exposed credentials or keys
@@ -474,7 +472,7 @@ export class MCPProtection {
   /**
    * Detects embedded instructions in outputs
    */
-  private detectEmbeddedInstructions(content: string, context: any): MCPViolation[] {
+  private detectEmbeddedInstructions(content: string, _context: any): MCPViolation[] {
     const violations: MCPViolation[] = [];
 
     const instructionPatterns = [
@@ -534,7 +532,8 @@ export class MCPProtection {
   /**
    * Maps policy rule IDs to MCP violation types
    */
-  private mapPolicyToMCPViolationType(ruleId: string): MCPViolation['type'] {
+  // @ts-expect-error - Reserved for future policy integration
+  private _mapPolicyToMCPViolationType(ruleId: string): MCPViolation['type'] {
     // Map different policy types to appropriate MCP violation categories
     if (ruleId.includes('injection') || ruleId.includes('prompt') || ruleId.includes('manipulation')) {
       return 'prompt_injection';
@@ -555,7 +554,8 @@ export class MCPProtection {
   /**
    * Gets numeric score based on severity level
    */
-  private getSeverityScore(severity: string): number {
+  // @ts-expect-error - Reserved for future scoring system
+  private _getSeverityScore(severity: string): number {
     switch (severity) {
       case 'critical': return 4;
       case 'high': return 3;

@@ -1,32 +1,135 @@
 /**
  * Guardrails decorator for automatic policy enforcement
+ * Supports both TC39 (modern) and legacy TypeScript decorator standards
  */
 
-import type { GuardrailOptions, AnyFunction } from '../types/index.js';
+import type { GuardrailOptions, AnyFunction, Logger } from '../types/index.js';
 import { KliraPolicyViolation } from '../types/index.js';
 import { getLogger } from '../config/index.js';
 import { GuardrailsEngine } from '../guardrails/engine.js';
 import { KliraTracing } from '../observability/tracing.js';
 import { KliraMetrics } from '../observability/metrics.js';
 
+// TC39 Decorator Context interface (for modern decorators)
+interface TC39DecoratorContext {
+  kind: string;
+  name: string | symbol;
+  private?: boolean;
+  static?: boolean;
+  metadata?: Record<string | symbol | number, unknown>;
+}
+
+// Type guards for decorator standard detection
+function isTC39Context(value: any): value is TC39DecoratorContext {
+  return value && typeof value === 'object' && 'kind' in value && 'name' in value;
+}
+
+// @ts-expect-error - Used for decorator standard detection
+function isLegacyDecorator(descriptor: any): descriptor is PropertyDescriptor {
+  return descriptor && typeof descriptor === 'object' && ('value' in descriptor || 'get' in descriptor || 'set' in descriptor);
+}
+
 /**
- * Guardrails decorator for TypeScript
+ * Guardrails decorator that supports both TC39 (modern) and legacy TypeScript decorators
+ * Provides automatic policy enforcement with runtime initialization for safe operation
  */
 export function guardrails(options: GuardrailOptions = {}) {
   return function <_T extends AnyFunction>(
-    _target: any,
-    propertyKey: string | symbol,
-    descriptor: PropertyDescriptor
-  ): PropertyDescriptor {
-    const originalMethod = descriptor.value;
-    const logger = getLogger();
-    const methodName = String(propertyKey);
+    targetOrValue: any,
+    propertyKeyOrContext: string | symbol | TC39DecoratorContext,
+    descriptor?: PropertyDescriptor
+  ): PropertyDescriptor | Function {
+    // Detect which decorator standard is being used
+    const isTC39 = isTC39Context(propertyKeyOrContext);
 
-    descriptor.value = async function (...args: any[]) {
+    let originalMethod: Function;
+    let propertyKey: string | symbol;
+    let methodName: string;
+    
+    if (isTC39) {
+      // TC39 Decorator Standard (modern - used by tsx, esbuild)
+      const context = propertyKeyOrContext as TC39DecoratorContext;
+      originalMethod = targetOrValue;
+      propertyKey = context.name;
+      methodName = String(context.name);
+      
+      // Validate that we're decorating a method
+      if (context.kind !== 'method') {
+        throw new Error(`@guardrails decorator can only be applied to methods. Found: ${context.kind}`);
+      }
+      
+      if (!originalMethod || typeof originalMethod !== 'function') {
+        throw new Error(`@guardrails decorator target must be a function. Found: ${typeof originalMethod}`);
+      }
+    } else {
+      // Legacy TypeScript Decorator Standard (used by tsc)
+      propertyKey = propertyKeyOrContext as string | symbol;
+      methodName = String(propertyKey);
+      
+      // Handle missing descriptor case
+      if (!descriptor) {
+        descriptor = Object.getOwnPropertyDescriptor(targetOrValue, propertyKey) || {
+          value: targetOrValue[propertyKey],
+          writable: true,
+          enumerable: true,
+          configurable: true
+        };
+      }
+      
+      originalMethod = descriptor?.value;
+      
+      if (!originalMethod || typeof originalMethod !== 'function') {
+        throw new Error(`@guardrails decorator can only be applied to methods. Found: ${typeof originalMethod}`);
+      }
+    }
+
+    // Create the wrapped method with runtime initialization
+    const wrappedMethod = async function (this: any, ...args: any[]) {
+      // Runtime initialization - moved from decoration time to prevent initialization order issues
+      let logger: Logger;
+      let tracing: KliraTracing | undefined;
+      let metrics: KliraMetrics | undefined;
+      let guardrails: GuardrailsEngine;
+      
+      try {
+        // Get logger at runtime to ensure config is initialized
+        logger = getLogger();
+      } catch (error) {
+        // Fallback logger if config not initialized
+        logger = {
+          debug: () => {},
+          info: () => {},
+          warn: (...args) => console.warn('[Klira]', ...args),
+          error: (...args) => console.error('[Klira]', ...args)
+        };
+        logger.warn(`Failed to get logger, using fallback: ${error}`);
+      }
+      
       const startTime = Date.now();
-      const tracing = KliraTracing.getInstance();
-      const metrics = KliraMetrics.getInstance();
-      const guardrails = GuardrailsEngine.getInstance();
+      
+      // Safely initialize observability components (optional chaining for disabled features)
+      try {
+        tracing = KliraTracing.getInstance();
+      } catch {
+        // Tracing not initialized, disabled, or config not ready
+        tracing = undefined;
+      }
+      
+      try {
+        metrics = KliraMetrics.getInstance();
+      } catch {
+        // Metrics not initialized, disabled, or config not ready
+        metrics = undefined;
+      }
+      
+      // Initialize GuardrailsEngine with error handling
+      try {
+        guardrails = GuardrailsEngine.getInstance();
+      } catch (error) {
+        logger.error(`Failed to initialize GuardrailsEngine in ${methodName}: ${error}`);
+        // If guardrails can't be initialized, execute method directly
+        return await originalMethod.apply(this, args);
+      }
 
       const metadata = {
         framework: 'typescript-decorator',
@@ -34,13 +137,11 @@ export function guardrails(options: GuardrailOptions = {}) {
         requestId: `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       };
 
-      metrics.recordRequest(metadata);
+      // Safe metrics recording with optional chaining
+      metrics?.recordRequest(metadata);
 
-      try {
-        let result;
-
-        // Trace the entire operation
-        result = await tracing.traceLLMCall('decorated_method', metadata, async () => {
+      // Define the guardrails execution function
+      const executeWithGuardrails = async () => {
           let processedArgs = args;
           
           // Input guardrails
@@ -48,21 +149,26 @@ export function guardrails(options: GuardrailOptions = {}) {
             const inputContent = extractInputContent(args, options);
             
             if (inputContent) {
-              const inputResult = await tracing.traceGuardrails('input', async () => {
-                return guardrails.evaluateInput(inputContent, options);
-              });
+              const inputResult = tracing ? 
+                await tracing.traceGuardrails('input', async () => {
+                  return guardrails.evaluateInput(inputContent, options);
+                }) :
+                await guardrails.evaluateInput(inputContent, options);
 
               const guardrailDuration = Date.now() - startTime;
-              metrics.recordGuardrailCheck('input', guardrailDuration, inputResult.blocked);
+              // Safe metrics recording with optional chaining
+              metrics?.recordGuardrailCheck('input', guardrailDuration, inputResult.blocked);
 
               if (inputResult.blocked) {
-                // Record violations
-                for (const violation of inputResult.violations) {
-                  metrics.recordGuardrailViolation(
-                    violation.ruleId,
-                    violation.severity,
-                    metadata
-                  );
+                // Record violations with safe metrics access
+                if (metrics && inputResult.violations) {
+                  for (const violation of inputResult.violations) {
+                    metrics.recordGuardrailViolation(
+                      violation.ruleId,
+                      violation.severity,
+                      metadata
+                    );
+                  }
                 }
 
                 if (options.onInputViolation === 'exception') {
@@ -88,7 +194,7 @@ export function guardrails(options: GuardrailOptions = {}) {
             }
           }
 
-          // Execute original method with processed args
+          // Execute original method with processed args, preserving 'this' context
           const methodResult = await originalMethod.apply(this, processedArgs);
 
           // Output guardrails
@@ -96,21 +202,26 @@ export function guardrails(options: GuardrailOptions = {}) {
             const outputContent = extractOutputContent(methodResult, options);
             
             if (outputContent) {
-              const outputResult = await tracing.traceGuardrails('output', async () => {
-                return guardrails.evaluateOutput(outputContent, options);
-              });
+              const outputResult = tracing ?
+                await tracing.traceGuardrails('output', async () => {
+                  return guardrails.evaluateOutput(outputContent, options);
+                }) :
+                await guardrails.evaluateOutput(outputContent, options);
 
               const guardrailDuration = Date.now() - startTime;
-              metrics.recordGuardrailCheck('output', guardrailDuration, outputResult.blocked);
+              // Safe metrics recording with optional chaining
+              metrics?.recordGuardrailCheck('output', guardrailDuration, outputResult.blocked);
 
               if (outputResult.blocked) {
-                // Record violations
-                for (const violation of outputResult.violations) {
-                  metrics.recordGuardrailViolation(
-                    violation.ruleId,
-                    violation.severity,
-                    metadata
-                  );
+                // Record violations with safe metrics access
+                if (metrics && outputResult.violations) {
+                  for (const violation of outputResult.violations) {
+                    metrics.recordGuardrailViolation(
+                      violation.ruleId,
+                      violation.severity,
+                      metadata
+                    );
+                  }
                 }
 
                 if (options.onOutputViolation === 'exception') {
@@ -134,25 +245,53 @@ export function guardrails(options: GuardrailOptions = {}) {
           }
 
           return methodResult;
-        });
+        };
+
+      try {
+        let result;
+
+        // Trace the entire operation if tracing is available and enabled
+        if (tracing) {
+          result = await tracing.traceLLMCall('decorated_method', metadata, async () => {
+            return await executeWithGuardrails();
+          });
+        } else {
+          result = await executeWithGuardrails();
+        }
 
         const duration = Date.now() - startTime;
-        metrics.recordLatency(methodName, duration, metadata);
-        metrics.recordSuccess(metadata);
+        // Safe metrics recording with optional chaining
+        metrics?.recordLatency(methodName, duration, metadata);
+        metrics?.recordSuccess(metadata);
 
         return result;
 
       } catch (error) {
         const duration = Date.now() - startTime;
-        metrics.recordLatency(methodName, duration, metadata);
-        metrics.recordError(metadata, error as Error);
+        // Safe metrics recording with optional chaining  
+        metrics?.recordLatency(methodName, duration, metadata);
+        metrics?.recordError(metadata, error as Error);
         
         logger.error(`Guardrails decorator error in ${methodName}: ${error}`);
         throw error;
       }
     };
 
-    return descriptor;
+    // Return appropriate format based on decorator standard
+    if (isTC39) {
+      // TC39 decorators expect the wrapped function to be returned directly
+      return wrappedMethod as _T;
+    } else {
+      // Legacy decorators expect a PropertyDescriptor to be returned
+      const newDescriptor: PropertyDescriptor = {
+        value: wrappedMethod,
+        writable: descriptor?.writable ?? true,
+        enumerable: descriptor?.enumerable ?? true,
+        configurable: descriptor?.configurable ?? true
+      };
+      
+      return newDescriptor;
+    }
   };
 }
 

@@ -47,12 +47,12 @@ export function createConfig(overrides: Partial<KliraConfig> = {}): KliraConfig 
     apiKey: process.env.KLIRA_API_KEY,
     appName: process.env.KLIRA_APP_NAME,
     openTelemetryEndpoint: process.env.KLIRA_OPENTELEMETRY_ENDPOINT,
-    tracingEnabled: process.env.KLIRA_TRACING_ENABLED === 'true',
-    telemetryEnabled: process.env.KLIRA_TELEMETRY_ENABLED === 'true',
+    tracingEnabled: process.env.KLIRA_TRACING_ENABLED ? process.env.KLIRA_TRACING_ENABLED === 'true' : undefined,
+    telemetryEnabled: process.env.KLIRA_TELEMETRY_ENABLED ? process.env.KLIRA_TELEMETRY_ENABLED === 'true' : undefined,
     policiesPath: process.env.KLIRA_POLICIES_PATH,
     policyEnforcement: process.env.KLIRA_POLICY_ENFORCEMENT !== 'false',
-    verbose: process.env.KLIRA_VERBOSE === 'true',
-    debugMode: process.env.KLIRA_DEBUG === 'true',
+    verbose: process.env.KLIRA_VERBOSE ? process.env.KLIRA_VERBOSE === 'true' : undefined,
+    debugMode: process.env.KLIRA_DEBUG ? process.env.KLIRA_DEBUG === 'true' : undefined,
     environment: process.env.NODE_ENV || process.env.KLIRA_ENVIRONMENT,
   };
 

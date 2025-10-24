@@ -12,12 +12,13 @@ describe('Configuration Management', () => {
     delete process.env.KLIRA_API_KEY;
     delete process.env.KLIRA_APP_NAME;
     delete process.env.KLIRA_TRACING_ENABLED;
+    delete process.env.NODE_ENV;
   });
 
   describe('createConfig', () => {
     it('should create config with defaults', () => {
       const config = createConfig();
-      
+
       expect(config.tracingEnabled).toBe(true);
       expect(config.telemetryEnabled).toBe(false);
       expect(config.policyEnforcement).toBe(true);

@@ -47,3 +47,13 @@ pids/
 *.pid
 *.seed
 *.pid.lock
+
+# Internal development files (do not commit)
+*_INTERNAL.md
+*_ANALYSIS.md
+docs/*
+
+CLAUDE.md
+.claude/*
+thoughts/*
+docs/*

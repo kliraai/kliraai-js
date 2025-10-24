@@ -32,6 +32,7 @@ export interface AuditLogConfig {
     critical: number;
     high: number;
     medium: number;
+    low: number;
   };
 }
 
@@ -61,6 +62,7 @@ export class SecurityAuditLog {
         critical: 1,
         high: 5,
         medium: 10,
+        low: 20,
       },
       ...config,
     };
@@ -107,7 +109,7 @@ export class SecurityAuditLog {
 
     // Check for alert thresholds
     if (this.config.realTimeAlerts) {
-      this.checkAlertThresholds(event);
+      this.checkAlertThresholds(fullEvent);
     }
 
     // Export if path is configured
