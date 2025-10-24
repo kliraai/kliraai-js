@@ -22,7 +22,7 @@ export interface PolicyRule {
   name: string;
   description: string;
   pattern?: string;
-  action: 'block' | 'warn' | 'transform';
+  action: 'block' | 'warn' | 'allow';
   severity: 'low' | 'medium' | 'high' | 'critical';
 }
 
@@ -31,14 +31,19 @@ export interface PolicyViolation {
   message: string;
   severity: 'low' | 'medium' | 'high' | 'critical';
   blocked: boolean;
-  transformedContent?: string;
   metadata?: Record<string, any>;
   // Additional compliance fields
   description?: string;
   policyName?: string;
   category?: string;
-  direction?: 'input' | 'output';
+  direction?: 'input' | 'output' | string;  // Allow any string for flexibility
   timestamp?: number;
+  // Fast rules matching fields
+  matched?: string;
+  position?: {
+    start: number;
+    end: number;
+  };
 }
 
 export interface GuardrailResult {

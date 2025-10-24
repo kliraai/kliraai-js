@@ -8,12 +8,11 @@ import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentation
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import { Resource } from '@opentelemetry/resources';
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
-import type { 
-  KliraConfig, 
-  SpanAttributes, 
-  TraceMetadata, 
-  HierarchyContext, 
-  ConversationContext, 
+import type {
+  KliraConfig,
+  SpanAttributes,
+  TraceMetadata,
+  HierarchyContext,
   Logger,
   PolicyViolation,
   GuardrailResult,
@@ -134,11 +133,21 @@ export class KliraTracing {
     attributes: Partial<SpanAttributes> = {},
     kind: SpanKind = SpanKind.INTERNAL
   ): Span {
+    // Flatten nested compliance.tags if present
+    const flattenedAttributes: any = { ...attributes };
+    if (flattenedAttributes['klira.compliance.tags']) {
+      const tags = flattenedAttributes['klira.compliance.tags'] as Record<string, string>;
+      Object.entries(tags).forEach(([key, value]) => {
+        flattenedAttributes[`klira.compliance.tag.${key}`] = value;
+      });
+      delete flattenedAttributes['klira.compliance.tags'];
+    }
+
     const span = this.tracer.startSpan(name, {
       kind,
       attributes: {
         'klira.instrumented': true,
-        ...attributes,
+        ...flattenedAttributes,
       },
     });
 

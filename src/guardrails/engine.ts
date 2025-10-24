@@ -2,12 +2,11 @@
  * Main guardrails engine orchestrating all policy evaluation components
  */
 
-import type { 
-  PolicyViolation, 
-  GuardrailResult, 
-  GuardrailOptions, 
-  Logger,
-  PolicyUsageInfo
+import type {
+  PolicyViolation,
+  GuardrailResult,
+  GuardrailOptions,
+  Logger
 } from '../types/index.js';
 import { getLogger } from '../config/index.js';
 import { FastRulesEngine } from './fast-rules.js';
@@ -131,27 +130,26 @@ export class GuardrailsEngine {
 
       // Layer 1: Fast Rules (pattern matching with direction awareness)
       if (this.config.fastRulesEnabled) {
-        const fastResult = this.fastRules.isYAMLInitialized() 
+        const fastResult = this.fastRules.isYAMLInitialized()
           ? this.fastRules.evaluateWithDirection(content, 'inbound')
           : this.fastRules.evaluate(content);
-          
+
         // Track which policies were evaluated
         const fastPolicies = this.fastRules.getPolicyIds();
         evaluatedPolicies.push(...fastPolicies);
-        
+
         // Track triggered policies
         const violatedPolicies = fastResult.violations.map(v => v.ruleId);
         triggeredPolicies.push(...violatedPolicies);
-        
+
         violations.push(...fastResult.violations.map(v => ({
           ...v,
           direction: 'input',
           timestamp: Date.now(),
         })));
-        
-        transformedContent = 'transformedContent' in fastResult 
-          ? fastResult.transformedContent 
-          : content;
+
+        // transformedContent always equals original content in new model
+        transformedContent = content;
         blocked = blocked || fastResult.blocked;
 
         this.logger.debug(`Fast rules found ${fastResult.violations.length} violations`);
@@ -294,10 +292,9 @@ export class GuardrailsEngine {
           direction: 'output',
           timestamp: Date.now(),
         })));
-        
-        transformedContent = 'transformedContent' in fastResult 
-          ? fastResult.transformedContent 
-          : content;
+
+        // transformedContent always equals original content in new model
+        transformedContent = content;
         blocked = blocked || fastResult.blocked;
 
         this.logger.debug(`Fast rules (output) found ${fastResult.violations.length} violations`);

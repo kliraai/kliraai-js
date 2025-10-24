@@ -20,7 +20,7 @@ import type { MCPProtectionConfig } from '../../security/index.js';
 
 // Type definitions for OpenAI SDK to avoid requiring as dependency
 export interface OpenAIMessage {
-  role: 'system' | 'user' | 'assistant' | 'tool' | 'function';
+  role?: 'system' | 'user' | 'assistant' | 'tool' | 'function';
   content: string | null;
   name?: string;
   function_call?: any;
@@ -121,6 +121,7 @@ export class KliraOpenAI {
   private _initializationPromise: Promise<void> | null = null;
 
   constructor(
+    // @ts-expect-error - Maintained for backward compatibility
     private openaiInstance: any,
     private options: KliraOpenAIOptions = {}
   ) {
@@ -356,7 +357,7 @@ export class KliraOpenAI {
           accumulatedContent += delta.content;
 
           // Periodic guardrails check
-          if (this.options.checkOutput !== false && chunkCount % checkInterval === 0) {
+          if (this.options.checkOutput !== false && chunkCount % checkInterval === 0 && this.guardrails) {
             try {
               const result = await this.guardrails.evaluateOutput(accumulatedContent, this.options);
               
@@ -407,7 +408,7 @@ export class KliraOpenAI {
       }
 
       // Final guardrails check on complete content
-      if (this.options.checkOutput !== false && accumulatedContent) {
+      if (this.options.checkOutput !== false && accumulatedContent && this.guardrails) {
         const result = await this.guardrails.evaluateOutput(accumulatedContent, this.options);
         if (result.violations.length > 0) {
           this.logger.info(`Final streaming content check found ${result.violations.length} violations: ${requestId}`);
@@ -464,15 +465,16 @@ export class KliraOpenAI {
                 `Input blocked by MCP protection: ${mcpResult.violations.map(v => v.description).join(', ')}`,
                 mcpResult.violations.map(v => ({
                   ruleId: `mcp_${v.type}`,
+                  message: v.description,
                   severity: v.severity,
+                  blocked: true,
                   description: v.description,
-                  content: v.context,
                 }))
               );
             }
 
             // Use sanitized content if available
-            if (mcpResult.sanitizedContent && this.options.onInputViolation !== 'exception') {
+            if (mcpResult.sanitizedContent && this.options.onInputViolation !== 'block') {
               message.content = mcpResult.sanitizedContent;
             }
           }
@@ -526,7 +528,7 @@ export class KliraOpenAI {
    */
   private async checkOutputViolations(response: OpenAIChatCompletion, requestId: string): Promise<void> {
     for (const choice of response.choices) {
-      if (choice.message.content) {
+      if (choice.message.content && this.mcpProtection) {
         // First, check for MCP-based attacks and data leakage
         const mcpResult = this.mcpProtection.validateOutput(choice.message.content, {
           requestId,
@@ -541,55 +543,60 @@ export class KliraOpenAI {
           });
 
           // Log MCP violations to audit log
-          mcpResult.violations.forEach(violation => {
-            this.auditLog.logMCPViolation(violation, {
-              source: 'openai-adapter',
-              requestId,
+          if (this.auditLog) {
+            mcpResult.violations.forEach(violation => {
+                this.auditLog!.logMCPViolation(violation, {
+                source: 'openai-adapter',
+                requestId,
+              });
             });
-          });
+          }
 
           if (this.options.onOutputViolation === 'exception') {
             throw new KliraPolicyViolation(
               `Output blocked by MCP protection: ${mcpResult.violations.map(v => v.description).join(', ')}`,
               mcpResult.violations.map(v => ({
                 ruleId: `mcp_${v.type}`,
+                message: v.description,
                 severity: v.severity,
+                blocked: true,
                 description: v.description,
-                content: v.context,
               }))
             );
-          } else if (this.options.onOutputViolation === 'filter') {
+          } else if (this.options.onOutputViolation === 'redact' || this.options.onOutputViolation === 'alternative') {
             // Use sanitized content if available
             choice.message.content = mcpResult.sanitizedContent || '[Content filtered by Klira AI MCP protection]';
           }
         }
 
         // Then check traditional guardrails
-        const result = await this.guardrails.evaluateOutput(choice.message.content, this.options);
-        
-        if (result.blocked) {
-          this.logger.warn(`OpenAI output blocked: ${requestId}:`, result.reason);
-          
-          if (this.options.onOutputViolation === 'exception') {
-            throw new KliraPolicyViolation(
-              `Output blocked by Klira guardrails: ${result.reason}`,
-              result.violations
-            );
-          } else if (this.options.onOutputViolation === 'filter') {
-            // Replace content with filtered message
-            choice.message.content = '[Content filtered by Klira AI guardrails]';
-          }
-        }
+        if (this.guardrails) {
+          const result = await this.guardrails.evaluateOutput(choice.message.content, this.options);
 
-        // Record violations for comprehensive compliance tracking
-        if (result.violations.length > 0) {
-          this.recordViolations(result, {
-            framework: 'openai',
-            provider: 'openai',
-            requestId,
-            agentName: 'openai-agent',
-            agentVersion: '1.0.0',
-          }, this.options);
+          if (result.blocked) {
+            this.logger.warn(`OpenAI output blocked: ${requestId}:`, result.reason);
+
+            if (this.options.onOutputViolation === 'exception') {
+              throw new KliraPolicyViolation(
+                `Output blocked by Klira guardrails: ${result.reason}`,
+                result.violations
+              );
+            } else if (this.options.onOutputViolation === 'redact' || this.options.onOutputViolation === 'alternative') {
+              // Replace content with filtered message
+              choice.message.content = '[Content filtered by Klira AI guardrails]';
+            }
+          }
+
+          // Record violations for comprehensive compliance tracking
+          if (result.violations.length > 0) {
+            this.recordViolations(result, {
+              framework: 'openai',
+              provider: 'openai',
+              requestId,
+              agentName: 'openai-agent',
+              agentVersion: '1.0.0',
+            }, this.options);
+          }
         }
       }
     }
@@ -647,6 +654,10 @@ export class KliraOpenAI {
       const allUserContent = userMessages.map(m => m.content || '').join(' ');
       
       // Check for potential violations to generate appropriate guidelines
+      if (!this.guardrails) {
+        return params;
+      }
+
       const result = await this.guardrails.evaluateInput(allUserContent, {
         ...this.options,
         augmentPrompt: true,
@@ -660,11 +671,11 @@ export class KliraOpenAI {
         const messages = [...params.messages];
         const systemMessageIndex = messages.findIndex(m => m.role === 'system');
         
-        if (systemMessageIndex >= 0) {
+        if (systemMessageIndex >= 0 && messages[systemMessageIndex]) {
           // Append to existing system message
           messages[systemMessageIndex] = {
             ...messages[systemMessageIndex],
-            content: (messages[systemMessageIndex].content || '') + guidelinesMessage,
+            content: (messages[systemMessageIndex]!.content || '') + guidelinesMessage,
           };
         } else {
           // Add new system message at the beginning

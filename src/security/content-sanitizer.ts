@@ -296,7 +296,10 @@ export class ContentSanitizer {
     if (original.includes('@')) {
       // Email
       const parts = original.split('@');
-      return `${parts[0].charAt(0)}***@${parts[1]}`;
+      if (parts[0] && parts[1]) {
+        return `${parts[0].charAt(0)}***@${parts[1]}`;
+      }
+      return '[REDACTED]';
     } else if (/\d{3}-?\d{2}-?\d{4}/.test(original)) {
       // SSN
       return 'XXX-XX-XXXX';

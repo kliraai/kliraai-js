@@ -28,7 +28,9 @@ export class PolicyCache {
       // Implement simple LRU by clearing cache when full
       if (this.compiledPatterns.size >= this.maxSize) {
         const firstKey = this.compiledPatterns.keys().next().value;
-        this.compiledPatterns.delete(firstKey);
+        if (firstKey) {
+          this.compiledPatterns.delete(firstKey);
+        }
       }
       
       this.compiledPatterns.set(pattern, regex);
@@ -66,7 +68,9 @@ export class PolicyCache {
       
       if (this.domainPatterns.size >= this.maxSize) {
         const firstKey = this.domainPatterns.keys().next().value;
-        this.domainPatterns.delete(firstKey);
+        if (firstKey) {
+          this.domainPatterns.delete(firstKey);
+        }
       }
       
       this.domainPatterns.set(cacheKey, regex);

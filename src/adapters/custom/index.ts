@@ -3,10 +3,12 @@
  * Provides a unified interface for any LLM application
  */
 
-import type { 
-  GuardrailOptions, 
+import type {
+  GuardrailOptions,
   TraceMetadata,
   Logger,
+  GuardrailResult,
+  ComplianceMetadata,
 } from '../../types/index.js';
 import { getLogger } from '../../config/index.js';
 import { GuardrailsEngine } from '../../guardrails/engine.js';
@@ -17,7 +19,7 @@ import { getMCPProtection, getSecurityAuditLog } from '../../security/index.js';
 import type { MCPProtectionConfig } from '../../security/index.js';
 
 export interface LLMMessage {
-  role: 'system' | 'user' | 'assistant';
+  role?: 'system' | 'user' | 'assistant';
   content: string;
   metadata?: Record<string, any>;
 }
@@ -76,8 +78,10 @@ export class KliraAgent {
   private tracing: KliraTracing | null = null;
   private metrics: KliraMetrics | null = null;
   private provider: LLMProvider;
-  // private mcpProtection: ReturnType<typeof getMCPProtection> | null = null;
-  // private auditLog: ReturnType<typeof getSecurityAuditLog> | null = null;
+  // @ts-expect-error - MCP protection integration in progress
+  private mcpProtection: ReturnType<typeof getMCPProtection> | null = null;
+  // @ts-expect-error - Security audit logging integration in progress
+  private auditLog: ReturnType<typeof getSecurityAuditLog> | null = null;
 
   // Async initialization state
   private _initialized = false;
@@ -478,7 +482,8 @@ export class KliraAgent {
   /**
    * Record comprehensive guardrail violations in metrics and tracing
    */
-  private recordViolations(
+  // @ts-expect-error - Reserved for future compliance reporting
+  private _recordViolations(
     result: GuardrailResult,
     metadata: TraceMetadata,
     options?: KliraAgentOptions
@@ -545,11 +550,11 @@ export class KliraAgent {
         const messages = [...request.messages];
         const systemMessageIndex = messages.findIndex(m => m.role === 'system');
         
-        if (systemMessageIndex >= 0) {
+        if (systemMessageIndex >= 0 && messages[systemMessageIndex]) {
           // Append to existing system message
           messages[systemMessageIndex] = {
             ...messages[systemMessageIndex],
-            content: messages[systemMessageIndex].content + guidelinesMessage,
+            content: (messages[systemMessageIndex]!.content || '') + guidelinesMessage,
           };
         } else {
           // Add new system message at the beginning
@@ -754,10 +759,3 @@ export class FunctionLLMProvider implements LLMProvider {
     yield* this.streamFn(request);
   }
 }
-
-// Re-export types for convenience
-export type { KliraAgentOptions };
-export type { LLMMessage };
-export type { LLMRequest };
-export type { LLMResponse };
-export type { LLMProvider };

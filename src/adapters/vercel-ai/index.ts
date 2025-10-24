@@ -186,7 +186,7 @@ export class VercelAIAdapter implements FrameworkAdapter {
       this.ensureInitialized();
       const startTime = Date.now();
       const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      
+
       const metadata: TraceMetadata = {
         framework: 'vercel-ai',
         provider: params.model.provider,
@@ -197,72 +197,67 @@ export class VercelAIAdapter implements FrameworkAdapter {
       await this.captureMetrics(metadata);
 
       try {
-        return await this.tracing?.traceLLMCall('generateText', metadata, async () => {
-          // Input guardrails
-          let processedParams = params;
-          if (options.checkInput !== false) {
-            const inputResult = await this.guardrails.evaluateInput(
-              this.extractContent(params),
-              options
-            );
+        // Input guardrails (OUTSIDE tracing wrapper)
+        let processedParams = params;
+        if (options.checkInput !== false) {
+          const inputResult = await this.guardrails.evaluateInput(
+            this.extractContent(params),
+            options
+          );
 
-            if (inputResult.blocked) {
-              this.recordViolations(inputResult, metadata, options);
-              
-              if (options.onInputViolation === 'exception') {
-                throw new KliraPolicyViolation(
-                  `Input policy violation: ${inputResult.reason}`,
-                  inputResult.violations
-                );
-              }
-              
-              // Return alternative response
-              return {
-                text: options.violationResponse || 'Request blocked due to policy violation.',
-                usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-              };
+          if (inputResult.blocked) {
+            this.recordViolations(inputResult, metadata, options);
+
+            if (options.onInputViolation === 'exception') {
+              throw new KliraPolicyViolation(
+                `Input policy violation: ${inputResult.reason}`,
+                inputResult.violations
+              );
             }
 
-            // Apply transformations and augmentation
-            processedParams = this.applyInputProcessing(params, inputResult, options);
+            // Return alternative response
+            return {
+              text: options.violationResponse || 'Request blocked due to policy violation.',
+              usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+            };
           }
 
-          // Execute original function
+          // Apply transformations and augmentation
+          processedParams = this.applyInputProcessing(params, inputResult, options);
+        }
+
+        // Execute original function (with optional tracing)
+        const executeCall = async () => {
           const result = await originalFn(processedParams);
 
-          // Output guardrails
+          // Output guardrails (OUTSIDE tracing wrapper)
           if (options.checkOutput !== false && result.text) {
             const outputResult = await this.guardrails.evaluateOutput(result.text, options);
-            
+
             if (outputResult.blocked) {
               this.recordViolations(outputResult, metadata, options);
-              
+
               if (options.onOutputViolation === 'exception') {
                 throw new KliraPolicyViolation(
                   `Output policy violation: ${outputResult.reason}`,
                   outputResult.violations
                 );
               }
-              
-              // Return alternative or transformed response
+
+              // Return alternative response
               return {
                 ...result,
-                text: outputResult.transformedInput ||
-                      options.outputViolationResponse ||
+                text: options.outputViolationResponse ||
+                      options.violationResponse ||
                       'Response blocked due to policy violation.',
               };
-            }
-
-            // Apply output transformations
-            if (outputResult.transformedInput) {
-              result.text = outputResult.transformedInput;
             }
           }
 
           // Record success metrics
           const duration = Date.now() - startTime;
           this.metrics?.recordLatency('generateText', duration, metadata);
-          
+
           if (result.usage) {
             this.metrics?.recordTokens(
               result.usage.promptTokens,
@@ -273,8 +268,14 @@ export class VercelAIAdapter implements FrameworkAdapter {
 
           this.metrics?.recordSuccess(metadata);
           return result;
+        };
 
-        }) || await originalFn(params);
+        // Wrap with tracing if available, otherwise just execute
+        if (this.tracing) {
+          return await this.tracing.traceLLMCall('generateText', metadata, executeCall);
+        } else {
+          return await executeCall();
+        }
 
       } catch (error) {
         const duration = Date.now() - startTime;

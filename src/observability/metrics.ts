@@ -3,7 +3,6 @@
  */
 
 import { metrics, type Counter, type Histogram, type Gauge } from '@opentelemetry/api';
-import { NodeSDK } from '@opentelemetry/sdk-node';
 import { MeterProvider, PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
 import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http';
 import { Resource } from '@opentelemetry/resources';
@@ -129,7 +128,7 @@ export class KliraMetrics implements MetricsCollector {
 
       // Create meter provider
       this.meterProvider = new MeterProvider({
-        resource,
+        resource: resource as any, // Type cast for version compatibility
         readers: [this.metricReader],
       });
 

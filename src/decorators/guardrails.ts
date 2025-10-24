@@ -24,6 +24,7 @@ function isTC39Context(value: any): value is TC39DecoratorContext {
   return value && typeof value === 'object' && 'kind' in value && 'name' in value;
 }
 
+// @ts-expect-error - Used for decorator standard detection
 function isLegacyDecorator(descriptor: any): descriptor is PropertyDescriptor {
   return descriptor && typeof descriptor === 'object' && ('value' in descriptor || 'get' in descriptor || 'set' in descriptor);
 }
