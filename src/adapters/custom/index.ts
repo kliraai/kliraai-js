@@ -78,9 +78,7 @@ export class KliraAgent {
   private tracing: KliraTracing | null = null;
   private metrics: KliraMetrics | null = null;
   private provider: LLMProvider;
-  // @ts-expect-error - MCP protection integration in progress
   private mcpProtection: ReturnType<typeof getMCPProtection> | null = null;
-  // @ts-expect-error - Security audit logging integration in progress
   private auditLog: ReturnType<typeof getSecurityAuditLog> | null = null;
 
   // Async initialization state
@@ -394,10 +392,55 @@ export class KliraAgent {
       this.logger.warn('Guardrails not initialized, skipping input validation');
       return;
     }
-    
+
     try {
       for (const message of messages) {
         if (message.content) {
+          // First, check for MCP-based attacks
+          if (this.mcpProtection) {
+            const mcpResult = this.mcpProtection.validateInput(message.content, {
+              messageRole: message.role,
+              requestId,
+              framework: 'custom-agent',
+            });
+
+            if (!mcpResult.isValid) {
+              this.logger.warn(`Custom agent input blocked by MCP protection: ${requestId}`, {
+                violations: mcpResult.violations.length,
+                riskScore: mcpResult.riskScore,
+              });
+
+              // Log MCP violations to audit log
+              if (this.auditLog) {
+                mcpResult.violations.forEach(violation => {
+                  this.auditLog!.logMCPViolation(violation, {
+                    source: 'custom-agent',
+                    requestId,
+                  });
+                });
+              }
+
+              if (this.options.onInputViolation === 'exception') {
+                throw new KliraPolicyViolation(
+                  `Input blocked by MCP protection: ${mcpResult.violations.map(v => v.description).join(', ')}`,
+                  mcpResult.violations.map(v => ({
+                    ruleId: `mcp_${v.type}`,
+                    message: v.description,
+                    severity: v.severity,
+                    blocked: true,
+                    description: v.description,
+                  }))
+                );
+              }
+
+              // Use sanitized content if available
+              if (mcpResult.sanitizedContent && this.options.onInputViolation !== 'block') {
+                message.content = mcpResult.sanitizedContent;
+              }
+            }
+          }
+
+          // Then check traditional guardrails
           const result = await this.guardrails.evaluateInput(message.content, this.options);
           
           if (result.blocked) {
@@ -447,8 +490,53 @@ export class KliraAgent {
       this.logger.warn('Guardrails not initialized, skipping output validation');
       return;
     }
-    
+
     if (response.content) {
+      // First, check for MCP-based attacks and data leakage
+      if (this.mcpProtection) {
+        const mcpResult = this.mcpProtection.validateOutput(response.content, {
+          requestId,
+          framework: 'custom-agent',
+          model: response.model || 'unknown',
+        });
+
+        if (!mcpResult.isValid) {
+          this.logger.warn(`Custom agent output blocked by MCP protection: ${requestId}`, {
+            violations: mcpResult.violations.length,
+            riskScore: mcpResult.riskScore,
+          });
+
+          // Log MCP violations to audit log
+          if (this.auditLog) {
+            mcpResult.violations.forEach(violation => {
+              this.auditLog!.logMCPViolation(violation, {
+                source: 'custom-agent',
+                requestId,
+              });
+            });
+          }
+
+          if (this.options.onOutputViolation === 'exception') {
+            throw new KliraPolicyViolation(
+              `Output blocked by MCP protection: ${mcpResult.violations.map(v => v.description).join(', ')}`,
+              mcpResult.violations.map(v => ({
+                ruleId: `mcp_${v.type}`,
+                message: v.description,
+                severity: v.severity,
+                blocked: true,
+                description: v.description,
+              }))
+            );
+          }
+
+          // Redact content if configured
+          if (this.options.onOutputViolation === 'redact') {
+            response.content = '[Content filtered by Klira AI MCP Protection]';
+          }
+        }
+      }
+
+      // Then check traditional guardrails
       const result = await this.guardrails.evaluateOutput(response.content, this.options);
       
       if (result.blocked) {

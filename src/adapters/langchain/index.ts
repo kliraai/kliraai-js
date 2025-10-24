@@ -636,4 +636,7 @@ export function createKliraLangChain(options: LangChainCallbackOptions = {}): {
   };
 }
 
+// Export alias for backward compatibility with existing tests and examples
+export { KliraCallbackHandler as KliraLangChainCallbacks };
+
 // Note: LLMResult and LangChainRunData are exported via the interface declarations above

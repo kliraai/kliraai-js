@@ -24,7 +24,6 @@ export class LLMFallbackService {
   private logger: Logger;
   private fallbackEnabled: boolean = true;
   private policies: PolicyDefinition[] = [];
-  // @ts-expect-error - Reserved for future use
   private initialized: boolean = false;
 
   constructor() {
@@ -54,6 +53,20 @@ export class LLMFallbackService {
     this.policies = policies;
     this.initialized = true;
     this.logger.debug(`LLM fallback initialized with ${policies.length} policies`);
+  }
+
+  /**
+   * Check if the service is initialized
+   */
+  isInitialized(): boolean {
+    return this.initialized;
+  }
+
+  /**
+   * Get the number of loaded policies
+   */
+  getPolicyCount(): number {
+    return this.policies.length;
   }
 
   /**
