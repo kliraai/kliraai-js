@@ -6,7 +6,6 @@ import type { PolicyRule, PolicyViolation, Logger } from '../types/index.js';
 import { getLogger } from '../config/index.js';
 import { PolicyLoader, PolicyCache } from './policy-loader.js';
 import { CompiledPolicy, PolicyEvaluationResult } from '../types/policies.js';
-import { FuzzyMatcher } from './fuzzy-matcher.js';
 
 export interface FastRulePattern {
   id: string;
