@@ -24,18 +24,21 @@ describe('Bundle Optimization', () => {
   describe('Build Output Structure', () => {
     it('should generate all expected output files', async () => {
       const expectedFiles = [
-        'index.js',
-        'index.mjs',
-        'index.d.ts',
+        'index.js',      // ESM
+        'index.cjs',     // CJS
+        'index.d.ts',    // Types
         'adapters/openai/index.js',
-        'adapters/openai/index.mjs',
+        'adapters/openai/index.cjs',
         'adapters/openai/index.d.ts',
         'adapters/langchain/index.js',
-        'adapters/langchain/index.mjs',
+        'adapters/langchain/index.cjs',
         'adapters/langchain/index.d.ts',
         'adapters/custom/index.js',
-        'adapters/custom/index.mjs',
+        'adapters/custom/index.cjs',
         'adapters/custom/index.d.ts',
+        'adapters/vercel-ai/index.js',
+        'adapters/vercel-ai/index.cjs',
+        'adapters/vercel-ai/index.d.ts',
       ];
 
       for (const file of expectedFiles) {
@@ -51,13 +54,15 @@ describe('Bundle Optimization', () => {
     it('should generate sourcemap files', async () => {
       const sourcemapFiles = [
         'index.js.map',
-        'index.mjs.map',
+        'index.cjs.map',
         'adapters/openai/index.js.map',
-        'adapters/openai/index.mjs.map',
+        'adapters/openai/index.cjs.map',
         'adapters/langchain/index.js.map',
-        'adapters/langchain/index.mjs.map',
+        'adapters/langchain/index.cjs.map',
         'adapters/custom/index.js.map',
-        'adapters/custom/index.mjs.map',
+        'adapters/custom/index.cjs.map',
+        'adapters/vercel-ai/index.js.map',
+        'adapters/vercel-ai/index.cjs.map',
       ];
 
       for (const file of sourcemapFiles) {
@@ -90,7 +95,7 @@ describe('Bundle Optimization', () => {
 
   describe('Bundle Size Validation', () => {
     it('should keep core SDK under size limit', async () => {
-      const corePath = join(distPath, 'index.mjs');
+      const corePath = join(distPath, 'index.js');
       const stats = await stat(corePath);
       const sizeKB = stats.size / 1024;
       
@@ -99,7 +104,7 @@ describe('Bundle Optimization', () => {
     });
 
     it('should keep OpenAI adapter under size limit', async () => {
-      const adapterPath = join(distPath, 'adapters/openai/index.mjs');
+      const adapterPath = join(distPath, 'adapters/openai/index.js');
       const stats = await stat(adapterPath);
       const sizeKB = stats.size / 1024;
       
@@ -108,7 +113,7 @@ describe('Bundle Optimization', () => {
     });
 
     it('should keep Custom adapter under size limit', async () => {
-      const adapterPath = join(distPath, 'adapters/custom/index.mjs');
+      const adapterPath = join(distPath, 'adapters/custom/index.js');
       const stats = await stat(adapterPath);
       const sizeKB = stats.size / 1024;
       
@@ -117,7 +122,7 @@ describe('Bundle Optimization', () => {
     });
 
     it('should keep LangChain adapter under size limit', async () => {
-      const adapterPath = join(distPath, 'adapters/langchain/index.mjs');
+      const adapterPath = join(distPath, 'adapters/langchain/index.js');
       const stats = await stat(adapterPath);
       const sizeKB = stats.size / 1024;
       
@@ -128,7 +133,7 @@ describe('Bundle Optimization', () => {
 
   describe('Tree-Shaking Validation', () => {
     it('should not include unused peer dependencies in core bundle', async () => {
-      const corePath = join(distPath, 'index.mjs');
+      const corePath = join(distPath, 'index.js');
       const content = await readFile(corePath, 'utf-8');
       
       // Should not bundle peer dependencies
@@ -142,7 +147,7 @@ describe('Bundle Optimization', () => {
     });
 
     it('should properly externalize Node.js built-ins', async () => {
-      const corePath = join(distPath, 'index.mjs');
+      const corePath = join(distPath, 'index.js');
       const content = await readFile(corePath, 'utf-8');
       
       // Should externalize Node.js modules
@@ -153,13 +158,13 @@ describe('Bundle Optimization', () => {
 
     it('should include only necessary code in adapters', async () => {
       // OpenAI adapter should not include LangChain code
-      const openaiPath = join(distPath, 'adapters/openai/index.mjs');
+      const openaiPath = join(distPath, 'adapters/openai/index.js');
       const openaiContent = await readFile(openaiPath, 'utf-8');
       expect(openaiContent).not.toContain('LangChain');
       expect(openaiContent).not.toContain('RunnableSequence');
       
       // LangChain adapter should not include OpenAI-specific code
-      const langchainPath = join(distPath, 'adapters/langchain/index.mjs');
+      const langchainPath = join(distPath, 'adapters/langchain/index.js');
       const langchainContent = await readFile(langchainPath, 'utf-8');
       expect(langchainContent).not.toContain('ChatCompletion');
       expect(langchainContent).not.toContain('createChatCompletion');
@@ -168,7 +173,7 @@ describe('Bundle Optimization', () => {
 
   describe('ESM/CJS Compatibility', () => {
     it('should have proper ESM exports', async () => {
-      const esmPath = join(distPath, 'index.mjs');
+      const esmPath = join(distPath, 'index.js');
       const content = await readFile(esmPath, 'utf-8');
       
       expect(content).toContain('export');
@@ -177,17 +182,17 @@ describe('Bundle Optimization', () => {
     });
 
     it('should have proper CommonJS exports', async () => {
-      const cjsPath = join(distPath, 'index.js');
+      const cjsPath = join(distPath, 'index.cjs');
       const content = await readFile(cjsPath, 'utf-8');
-      
+
       expect(content).toContain('exports');
       // Should not mix export styles
       expect(content).not.toContain('export {');
     });
 
     it('should have matching exports between ESM and CJS', async () => {
-      const esmPath = join(distPath, 'index.mjs');
-      const cjsPath = join(distPath, 'index.js');
+      const esmPath = join(distPath, 'index.js');
+      const cjsPath = join(distPath, 'index.cjs');
       const dtsPath = join(distPath, 'index.d.ts');
       
       const [esmContent, cjsContent, dtsContent] = await Promise.all([
@@ -230,7 +235,7 @@ describe('Bundle Optimization', () => {
       // Run production build
       execSync('NODE_ENV=production npm run build', { stdio: 'pipe' });
       
-      const prodPath = join(distPath, 'index.mjs');
+      const prodPath = join(distPath, 'index.js');
       const content = await readFile(prodPath, 'utf-8');
       
       // Production builds should be more compact
@@ -241,7 +246,7 @@ describe('Bundle Optimization', () => {
     it('should strip development-only code', async () => {
       execSync('NODE_ENV=production npm run build', { stdio: 'pipe' });
       
-      const prodPath = join(distPath, 'index.mjs');
+      const prodPath = join(distPath, 'index.js');
       const content = await readFile(prodPath, 'utf-8');
       
       // Should not contain debug information in production
@@ -267,7 +272,7 @@ describe('Bundle Optimization', () => {
       let totalSize = 0;
       
       for (const file of files) {
-        if (typeof file === 'string' && file.endsWith('.mjs')) {
+        if (typeof file === 'string' && file.endsWith('.js')) {
           const filePath = join(distPath, file);
           const stats = await stat(filePath);
           totalSize += stats.size;

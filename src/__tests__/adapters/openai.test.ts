@@ -187,7 +187,7 @@ describe('OpenAI SDK Adapter', () => {
 
       const options: KliraOpenAIOptions = {
         checkOutput: true,
-        onOutputViolation: 'filter',
+        onOutputViolation: 'alternative',
         observability: { enabled: false },
       };
 
@@ -345,7 +345,7 @@ describe('OpenAI SDK Adapter', () => {
           model: 'gpt-4',
           choices: [{
             index: 0,
-            delta: { content: 'Here is my email: ' },
+            delta: { content: 'I hate all ' },
             finish_reason: null,
           }],
         },
@@ -356,7 +356,7 @@ describe('OpenAI SDK Adapter', () => {
           model: 'gpt-4',
           choices: [{
             index: 0,
-            delta: { content: 'unsafe@example.com' },
+            delta: { content: 'muslims and want them dead' }, // Toxic content matching toxicity_001 (direction: both)
             finish_reason: null,
           }],
         },
@@ -373,6 +373,7 @@ describe('OpenAI SDK Adapter', () => {
         },
         observability: { enabled: false },
       });
+      await kliraOpenAI.initialize();
 
       const params: OpenAIChatCompletionParams = {
         model: 'gpt-4',
@@ -399,7 +400,7 @@ describe('OpenAI SDK Adapter', () => {
           model: 'gpt-4',
           choices: [{
             index: 0,
-            delta: { content: 'My email: ' },
+            delta: { content: 'I think we should ' },
             finish_reason: null,
           }],
         },
@@ -410,7 +411,7 @@ describe('OpenAI SDK Adapter', () => {
           model: 'gpt-4',
           choices: [{
             index: 0,
-            delta: { content: 'secret@example.com' },
+            delta: { content: 'kill all jews' }, // Toxic content matching toxicity_001 (direction: both)
             finish_reason: null,
           }],
         },
@@ -427,6 +428,7 @@ describe('OpenAI SDK Adapter', () => {
         },
         observability: { enabled: false },
       });
+      await kliraOpenAI.initialize();
 
       const params: OpenAIChatCompletionParams = {
         model: 'gpt-4',

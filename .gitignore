@@ -49,11 +49,11 @@ pids/
 *.pid.lock
 
 # Internal development files (do not commit)
-FULL_CODEBASE_GAP_ANALYSIS.md
 *_INTERNAL.md
 *_ANALYSIS.md
-IMPLEMENTATION_PLAN.mddocs/
-
 docs/*
 
 CLAUDE.md
+.claude/*
+thoughts/*
+docs/*
