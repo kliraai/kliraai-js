@@ -12,8 +12,8 @@ import {
   type LLMRequest,
   type LLMResponse,
   type KliraAgentOptions 
-} from '../adapters/custom/index.js';
-import { setGlobalConfig, createConfig } from '../config/index.js';
+} from '../../adapters/custom/index.js';
+import { setGlobalConfig, createConfig } from '../../config/index.js';
 
 // Real-world provider implementations for testing
 class OpenAILikeProvider implements LLMProvider {
