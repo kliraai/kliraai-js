@@ -4,7 +4,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-The official JavaScript/TypeScript SDK for [Klira AI](https://klira.ai) - providing comprehensive **guardrails**, **observability**, and **compliance** for your GenAI applications.
+The official JavaScript/TypeScript SDK for [Klira AI](https://getklira.com) - providing comprehensive **guardrails**, **observability**, and **compliance** for your GenAI applications.
 
 ## 🚀 Quick Start
 
@@ -30,7 +30,7 @@ import { openai } from '@ai-sdk/openai';
 
 // 1. Initialize Klira AI
 await KliraAI.init({
-  apiKey: process.env.KLIRA_API_KEY, // Get your key at https://klira.ai
+  apiKey: process.env.KLIRA_API_KEY, // Get your key at https://hub.getklira.com
   appName: 'my-ai-app',
   tracingEnabled: true,
 });
@@ -208,7 +208,7 @@ KLIRA_APP_NAME=my-ai-application
 KLIRA_TRACING_ENABLED=true
 KLIRA_POLICY_ENFORCEMENT=true
 KLIRA_VERBOSE=false
-KLIRA_OPENTELEMETRY_ENDPOINT=https://api.klira.ai/v1/traces
+KLIRA_OPENTELEMETRY_ENDPOINT=https://api.getklira.com/v1/traces
 
 # For LLM fallback evaluation (optional)
 OPENAI_API_KEY=your_openai_key
@@ -321,10 +321,9 @@ This project is licensed under the MIT License - see the [LICENSE](./LICENSE) fi
 
 ## 🆘 Support
 
-- **Documentation**: [https://docs.klira.ai](https://docs.klira.ai)
-- **Discord Community**: [https://discord.gg/klira](https://discord.gg/klira)
+- **Documentation**: [https://docs.getklira.com](https://docs.getklira.com)
 - **GitHub Issues**: [https://github.com/kliraai/kliraai-js/issues](https://github.com/kliraai/kliraai-js/issues)
-- **Email Support**: [support@klira.ai](mailto:support@klira.ai)
+- **Email Support**: [support@getklira.com](mailto:support@getklira.com)
 
 ## 🗺️ Roadmap
 
@@ -341,6 +340,6 @@ This project is licensed under the MIT License - see the [LICENSE](./LICENSE) fi
 
 **Built with ❤️ by the Klira AI team**
 
-[Website](https://klira.ai) • [Documentation](https://docs.klira.ai) • [Twitter](https://twitter.com/kliraai) • [LinkedIn](https://linkedin.com/company/klira-ai)
+[Website](https://getklira.com) • [Documentation](https://docs.getklira.com) • [Twitter](https://twitter.com/kliraai) • [LinkedIn](https://linkedin.com/company/klira-ai)
 
 </div>
