@@ -4,8 +4,8 @@
 
 import { metrics, type Counter, type Histogram, type Gauge } from '@opentelemetry/api';
 import { MeterProvider, PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
-import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http';
-import { Resource } from '@opentelemetry/resources';
+import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-proto';
+import { resourceFromAttributes } from '@opentelemetry/resources';
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
 import type { TraceMetadata, Logger, KliraConfig } from '../types/index.js';
 import { getLogger } from '../config/index.js';
@@ -106,7 +106,7 @@ export class KliraMetrics implements MetricsCollector {
       this.logger.info('Initializing OpenTelemetry metrics export...');
 
       // Create resource
-      const resource = new Resource({
+      const resource = resourceFromAttributes({
         [ATTR_SERVICE_NAME]: this.config.serviceName,
         [ATTR_SERVICE_VERSION]: this.config.serviceVersion,
         'klira.sdk.name': 'klira',

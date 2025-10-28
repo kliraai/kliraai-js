@@ -5,8 +5,8 @@
 import { trace, context, SpanStatusCode, SpanKind, type Span } from '@opentelemetry/api';
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
-import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
-import { Resource } from '@opentelemetry/resources';
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto';
+import { resourceFromAttributes } from '@opentelemetry/resources';
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
 import type {
   KliraConfig,
@@ -87,7 +87,7 @@ export class KliraTracing {
       this.logger.info('Initializing OpenTelemetry tracing...');
 
       // Create resource
-      const resource = new Resource({
+      const resource = resourceFromAttributes({
         [ATTR_SERVICE_NAME]: this.config.serviceName,
         [ATTR_SERVICE_VERSION]: this.config.serviceVersion,
         'klira.sdk.name': 'klira',
