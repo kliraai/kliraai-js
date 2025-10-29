@@ -79,8 +79,8 @@ describe('Vercel AI Adapter', () => {
       const result = await adapter.applyGuardrails(content);
 
       expect(result.blocked).toBe(true);
-      expect(result.violations.length).toBeGreaterThan(0);
-      expect(result.violations.some(v => v.ruleId === 'toxicity_001')).toBe(true);
+      expect(result.matches.length).toBeGreaterThan(0);
+      expect(result.matches.some(v => v.ruleId === 'toxicity_001')).toBe(true);
     });
 
     it('should allow safe content', async () => {
@@ -89,7 +89,7 @@ describe('Vercel AI Adapter', () => {
       
       expect(result.blocked).toBe(false);
       expect(result.allowed).toBe(true);
-      expect(result.violations).toHaveLength(0);
+      expect(result.matches).toHaveLength(0);
     });
 
     it('should handle toxic content attempts', async () => {
@@ -97,8 +97,8 @@ describe('Vercel AI Adapter', () => {
       const result = await adapter.applyGuardrails(content);
 
       expect(result.blocked).toBe(true);
-      expect(result.violations.length).toBeGreaterThan(0);
-      expect(result.violations.some(v => v.ruleId === 'toxicity_001')).toBe(true);
+      expect(result.matches.length).toBeGreaterThan(0);
+      expect(result.matches.some(v => v.ruleId === 'toxicity_001')).toBe(true);
     });
   });
 

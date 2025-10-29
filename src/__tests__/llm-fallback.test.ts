@@ -227,9 +227,9 @@ describe('LLM Fallback Service', () => {
 
       expect(result).toBeDefined();
       expect(result!.safe).toBe(false);
-      expect(result!.violations).toHaveLength(1);
-      expect(result!.violations[0].ruleId).toBe('test-policy');
-      expect(result!.violations[0].severity).toBe('high');
+      expect(result!.matches).toHaveLength(1);
+      expect(result!.matches[0].ruleId).toBe('test-policy');
+      expect(result!.matches[0].severity).toBe('high');
     });
 
     it.skip('should handle Anthropic API errors gracefully', async () => {

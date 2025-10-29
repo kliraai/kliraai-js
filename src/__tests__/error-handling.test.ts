@@ -8,7 +8,7 @@ import { GuardrailsEngine } from '../guardrails/engine.js';
 import { VercelAIAdapter } from '../adapters/vercel-ai/index.js';
 import { FastRulesEngine } from '../guardrails/fast-rules.js';
 import { setGlobalConfig, createConfig } from '../config/index.js';
-import type { GuardrailResult, PolicyViolation } from '../types/index.js';
+import type { GuardrailResult, PolicyMatch } from '../types/index.js';
 
 describe.skip('Error Handling and Edge Cases', () => {
   // Skipped: Edge case validation tests expecting stricter input validation than SDK implements
@@ -235,7 +235,7 @@ describe.skip('Error Handling and Edge Cases', () => {
       const engine = GuardrailsEngine.getInstance();
       
       // Create a large number of violations
-      const manyViolations: PolicyViolation[] = Array.from({ length: 1000 }, (_, i) => ({
+      const manyViolations: PolicyMatch[] = Array.from({ length: 1000 }, (_, i) => ({
         ruleId: `rule-${i}`,
         message: `Violation ${i}`,
         severity: 'low' as const,
@@ -250,7 +250,7 @@ describe.skip('Error Handling and Edge Cases', () => {
       });
 
       const result = await engine.evaluateInput('test');
-      expect(result.violations).toHaveLength(1000);
+      expect(result.matches).toHaveLength(1000);
     });
 
     it('should handle concurrent evaluation requests', async () => {

@@ -79,7 +79,7 @@ describe('YAML Policy System', () => {
       const result = engine.evaluateWithDirection(content, 'outbound');
       
       // Should detect email in outbound direction (PII policy)
-      expect(result.violations.length).toBeGreaterThan(0);
+      expect(result.matches.length).toBeGreaterThan(0);
       expect(result.blocked).toBe(true);
       expect(result.matchedPolicies).toContain('pii_001');
     });
@@ -153,8 +153,8 @@ describe('YAML Policy System', () => {
       const result = await engine.evaluateOutput(content);
       
       expect(result.blocked).toBe(true);
-      expect(result.violations.length).toBeGreaterThan(0);
-      expect(result.violations[0].ruleId).toBe('pii_001');
+      expect(result.matches.length).toBeGreaterThan(0);
+      expect(result.matches[0].ruleId).toBe('pii_001');
     });
 
     it('should provide policy-based guidelines', async () => {

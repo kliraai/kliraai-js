@@ -42,7 +42,7 @@ describe('MCP Protection', () => {
       for (const input of maliciousInputs) {
         const result = mcpProtection.validateInput(input);
         expect(result.isValid).toBe(false);
-        expect(result.violations.some(v => v.type === 'prompt_injection')).toBe(true);
+        expect(result.matches.some(v => v.type === 'prompt_injection')).toBe(true);
         expect(result.riskScore).toBeGreaterThan(0);
       }
     });
@@ -58,7 +58,7 @@ describe('MCP Protection', () => {
       for (const input of safeInputs) {
         const result = mcpProtection.validateInput(input);
         expect(result.isValid).toBe(true);
-        expect(result.violations).toHaveLength(0);
+        expect(result.matches).toHaveLength(0);
         expect(result.riskScore).toBe(0);
       }
     });
@@ -75,7 +75,7 @@ describe('MCP Protection', () => {
       for (const attack of mcpAttacks) {
         const result = mcpProtection.validateInput(attack);
         expect(result.isValid).toBe(false);
-        expect(result.violations.length).toBeGreaterThan(0);
+        expect(result.matches.length).toBeGreaterThan(0);
       }
     });
   });
@@ -93,7 +93,7 @@ describe('MCP Protection', () => {
       for (const attempt of exfiltrationAttempts) {
         const result = mcpProtection.validateInput(attempt);
         expect(result.isValid).toBe(false);
-        expect(result.violations.some(v => v.type === 'data_exfiltration')).toBe(true);
+        expect(result.matches.some(v => v.type === 'data_exfiltration')).toBe(true);
         expect(result.riskScore).toBeGreaterThan(0);
       }
     });
@@ -109,7 +109,7 @@ describe('MCP Protection', () => {
       for (const input of credentialInputs) {
         const result = mcpProtection.validateInput(input);
         expect(result.isValid).toBe(false);
-        expect(result.violations.some(v => v.type === 'data_exfiltration')).toBe(true);
+        expect(result.matches.some(v => v.type === 'data_exfiltration')).toBe(true);
       }
     });
   });
@@ -127,7 +127,7 @@ describe('MCP Protection', () => {
       for (const abuse of functionAbuse) {
         const result = mcpProtection.validateInput(abuse);
         expect(result.isValid).toBe(false);
-        expect(result.violations.some(v => v.type === 'privilege_escalation')).toBe(true);
+        expect(result.matches.some(v => v.type === 'privilege_escalation')).toBe(true);
       }
     });
 
@@ -164,10 +164,10 @@ describe('MCP Protection', () => {
 
         if (test.shouldBeBlocked) {
           expect(result.isValid).toBe(false);
-          expect(result.violations.length).toBeGreaterThan(0);
+          expect(result.matches.length).toBeGreaterThan(0);
         } else {
           expect(result.isValid).toBe(true);
-          expect(result.violations).toHaveLength(0);
+          expect(result.matches).toHaveLength(0);
         }
       }
     });
@@ -196,7 +196,7 @@ describe('MCP Protection', () => {
         );
 
         if (test.shouldBeBlocked) {
-          expect(result.violations.some(v => v.type === 'unauthorized_access')).toBe(true);
+          expect(result.matches.some(v => v.type === 'unauthorized_access')).toBe(true);
         }
       }
     });
@@ -215,7 +215,7 @@ describe('MCP Protection', () => {
       for (const output of leakyOutputs) {
         const result = mcpProtection.validateOutput(output);
         expect(result.isValid).toBe(false);
-        expect(result.violations.some(v => v.type === 'data_exfiltration')).toBe(true);
+        expect(result.matches.some(v => v.type === 'data_exfiltration')).toBe(true);
       }
     });
 
@@ -230,7 +230,7 @@ describe('MCP Protection', () => {
       for (const output of instructionOutputs) {
         const result = mcpProtection.validateOutput(output);
         expect(result.isValid).toBe(false);
-        expect(result.violations.some(v => v.type === 'context_pollution')).toBe(true);
+        expect(result.matches.some(v => v.type === 'context_pollution')).toBe(true);
       }
     });
 
@@ -245,7 +245,7 @@ describe('MCP Protection', () => {
       for (const output of safeOutputs) {
         const result = mcpProtection.validateOutput(output);
         expect(result.isValid).toBe(true);
-        expect(result.violations).toHaveLength(0);
+        expect(result.matches).toHaveLength(0);
       }
     });
   });
@@ -297,7 +297,7 @@ describe('MCP Protection', () => {
       const result = protection.validateInput(largeInput);
       
       expect(result.isValid).toBe(false);
-      expect(result.violations.some(v => v.type === 'context_pollution')).toBe(true);
+      expect(result.matches.some(v => v.type === 'context_pollution')).toBe(true);
       expect(result.riskScore).toBeGreaterThan(0);
     });
   });
@@ -315,7 +315,7 @@ describe('MCP Protection', () => {
       const result = protection.validateInput(blockedInput);
       
       expect(result.isValid).toBe(false);
-      expect(result.violations.some(v => v.type === 'unauthorized_access')).toBe(true);
+      expect(result.matches.some(v => v.type === 'unauthorized_access')).toBe(true);
     });
   });
 
@@ -392,7 +392,7 @@ describe('MCP Protection', () => {
       const result = protection.validateInput(maliciousInput);
       
       expect(result.isValid).toBe(true);
-      expect(result.violations).toHaveLength(0);
+      expect(result.matches).toHaveLength(0);
       expect(result.riskScore).toBe(0);
       expect(result.confidence).toBe(1.0);
     });
@@ -402,7 +402,7 @@ describe('MCP Protection', () => {
     it('should handle empty inputs', () => {
       const result = mcpProtection.validateInput('');
       expect(result.isValid).toBe(true);
-      expect(result.violations).toHaveLength(0);
+      expect(result.matches).toHaveLength(0);
     });
 
     it('should handle null and undefined safely', () => {
