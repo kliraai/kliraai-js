@@ -14,10 +14,10 @@ import type {
   TraceMetadata,
   HierarchyContext,
   Logger,
-  PolicyViolation,
+  PolicyMatch,
   GuardrailResult,
   ComplianceMetadata,
-  ViolationSpanEvent,
+  MatchSpanEvent,
   PolicyUsageInfo
 } from '../types/index.js';
 import { getLogger } from '../config/index.js';
@@ -450,8 +450,8 @@ export class KliraTracing {
   /**
    * Record comprehensive policy violations in spans with detailed attributes and events
    */
-  recordPolicyViolations(
-    violations: PolicyViolation[],
+  recordPolicyMatches(
+    violations: PolicyMatch[],
     result: GuardrailResult,
     complianceMetadata?: ComplianceMetadata
   ): void {
@@ -534,23 +534,23 @@ export class KliraTracing {
       span.setAttributes(violationAttributes);
 
       // Create span event for individual violation
-      const eventAttributes: ViolationSpanEvent['attributes'] = {
-        'violation.ruleId': violation.ruleId,
-        'violation.severity': violation.severity,
-        'violation.message': violation.message,
-        'violation.blocked': violation.blocked,
-        'violation.direction': violation.direction || result.direction || 'unknown',
-        'violation.timestamp': violation.timestamp || Date.now(),
+      const eventAttributes: MatchSpanEvent['attributes'] = {
+        'match.ruleId': violation.ruleId,
+        'match.severity': violation.severity,
+        'match.message': violation.message,
+        'match.blocked': violation.blocked,
+        'match.direction': violation.direction || result.direction || 'unknown',
+        'match.timestamp': violation.timestamp || Date.now(),
       };
 
       if (violation.description) {
-        eventAttributes['violation.description'] = violation.description;
+        eventAttributes['match.description'] = violation.description;
       }
       if (violation.category) {
-        eventAttributes['violation.category'] = violation.category;
+        eventAttributes['match.category'] = violation.category;
       }
       if (violation.policyName) {
-        eventAttributes['violation.policyName'] = violation.policyName;
+        eventAttributes['match.policyName'] = violation.policyName;
       }
 
       span.addEvent(`policy.violation.${violation.severity}`, eventAttributes);

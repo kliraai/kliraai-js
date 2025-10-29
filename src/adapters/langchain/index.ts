@@ -136,14 +136,14 @@ export class KliraCallbackHandler {
             if (this.options.onInputViolation === 'exception') {
               throw new KliraPolicyViolation(
                 `Input blocked by Klira guardrails: ${result.reason}`,
-                result.violations
+                result.matches
               );
             }
           }
 
           // Log violations for monitoring
-          if (result.violations.length > 0) {
-            result.violations.forEach(violation => {
+          if (result.matches.length > 0) {
+            result.matches.forEach(violation => {
               this.metrics?.recordGuardrailViolation(violation.ruleId, violation.severity, {
                 framework: 'langchain',
                 operation: 'input_check',
@@ -204,7 +204,7 @@ export class KliraCallbackHandler {
             if (this.options.onStreamViolation === 'interrupt') {
               throw new KliraPolicyViolation(
                 `Streaming output blocked by Klira guardrails: ${result.reason}`,
-                result.violations
+                result.matches
               );
             }
           }
@@ -250,7 +250,7 @@ export class KliraCallbackHandler {
             if (this.options.onOutputViolation === 'exception') {
               throw new KliraPolicyViolation(
                 `Output blocked by Klira guardrails: ${result.reason}`,
-                result.violations
+                result.matches
               );
             } else if (this.options.onOutputViolation === 'alternative' && this.options.violationResponse) {
               // Replace the generation text with the violation response
@@ -259,8 +259,8 @@ export class KliraCallbackHandler {
           }
 
           // Track violations
-          if (result.violations.length > 0) {
-            result.violations.forEach(violation => {
+          if (result.matches.length > 0) {
+            result.matches.forEach(violation => {
               this.metrics?.recordGuardrailViolation(
                 violation.ruleId,
                 violation.severity,

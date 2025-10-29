@@ -289,7 +289,7 @@ export type {
   GuardrailOptions,
   TraceMetadata,
   HierarchyContext,
-  PolicyViolation,
+  PolicyMatch,
   GuardrailResult,
   SpanAttributes,
   FrameworkAdapter,

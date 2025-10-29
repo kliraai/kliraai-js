@@ -161,8 +161,8 @@ export function guardrails(options: GuardrailOptions = {}) {
 
               if (inputResult.blocked) {
                 // Record violations with safe metrics access
-                if (metrics && inputResult.violations) {
-                  for (const violation of inputResult.violations) {
+                if (metrics && inputResult.matches) {
+                  for (const violation of inputResult.matches) {
                     metrics.recordGuardrailViolation(
                       violation.ruleId,
                       violation.severity,
@@ -174,7 +174,7 @@ export function guardrails(options: GuardrailOptions = {}) {
                 if (options.onInputViolation === 'exception') {
                   throw new KliraPolicyViolation(
                     `Input policy violation in ${methodName}: ${inputResult.reason}`,
-                    inputResult.violations
+                    inputResult.matches
                   );
                 } else {
                   // Return alternative response
@@ -214,8 +214,8 @@ export function guardrails(options: GuardrailOptions = {}) {
 
               if (outputResult.blocked) {
                 // Record violations with safe metrics access
-                if (metrics && outputResult.violations) {
-                  for (const violation of outputResult.violations) {
+                if (metrics && outputResult.matches) {
+                  for (const violation of outputResult.matches) {
                     metrics.recordGuardrailViolation(
                       violation.ruleId,
                       violation.severity,
@@ -227,7 +227,7 @@ export function guardrails(options: GuardrailOptions = {}) {
                 if (options.onOutputViolation === 'exception') {
                   throw new KliraPolicyViolation(
                     `Output policy violation in ${methodName}: ${outputResult.reason}`,
-                    outputResult.violations
+                    outputResult.matches
                   );
                 } else {
                   // Return alternative or transformed response

@@ -365,8 +365,8 @@ export class KliraAgent {
       // Final guardrails check on complete content
       if (this.options.checkOutput !== false && accumulatedContent && this.guardrails) {
         const result = await this.guardrails.evaluateOutput(accumulatedContent, this.options);
-        if (result.violations.length > 0) {
-          this.logger.info(`Final streaming content check found ${result.violations.length} violations: ${requestId}`);
+        if (result.matches.length > 0) {
+          this.logger.info(`Final streaming content check found ${result.matches.length} violations: ${requestId}`);
         }
       }
 
@@ -406,13 +406,13 @@ export class KliraAgent {
 
             if (!mcpResult.isValid) {
               this.logger.warn(`Custom agent input blocked by MCP protection: ${requestId}`, {
-                violations: mcpResult.violations.length,
+                violations: mcpResult.matches.length,
                 riskScore: mcpResult.riskScore,
               });
 
               // Log MCP violations to audit log
               if (this.auditLog) {
-                mcpResult.violations.forEach(violation => {
+                mcpResult.matches.forEach(violation => {
                   this.auditLog!.logMCPViolation(violation, {
                     source: 'custom-agent',
                     requestId,
@@ -422,8 +422,8 @@ export class KliraAgent {
 
               if (this.options.onInputViolation === 'exception') {
                 throw new KliraPolicyViolation(
-                  `Input blocked by MCP protection: ${mcpResult.violations.map(v => v.description).join(', ')}`,
-                  mcpResult.violations.map(v => ({
+                  `Input blocked by MCP protection: ${mcpResult.matches.map(v => v.description).join(', ')}`,
+                  mcpResult.matches.map(v => ({
                     ruleId: `mcp_${v.type}`,
                     message: v.description,
                     severity: v.severity,
@@ -449,14 +449,14 @@ export class KliraAgent {
             if (this.options.onInputViolation === 'exception') {
               throw new KliraPolicyViolation(
                 `Input blocked by Klira guardrails: ${result.reason}`,
-                result.violations
+                result.matches
               );
             }
           }
 
           // Record violations for monitoring
-          if (result.violations.length > 0 && this.metrics) {
-            result.violations.forEach(violation => {
+          if (result.matches.length > 0 && this.metrics) {
+            result.matches.forEach(violation => {
               this.metrics!.recordGuardrailViolation(violation.ruleId, violation.severity, {
                 framework: 'custom-agent',
                 operation: 'input_check',
@@ -502,13 +502,13 @@ export class KliraAgent {
 
         if (!mcpResult.isValid) {
           this.logger.warn(`Custom agent output blocked by MCP protection: ${requestId}`, {
-            violations: mcpResult.violations.length,
+            violations: mcpResult.matches.length,
             riskScore: mcpResult.riskScore,
           });
 
           // Log MCP violations to audit log
           if (this.auditLog) {
-            mcpResult.violations.forEach(violation => {
+            mcpResult.matches.forEach(violation => {
               this.auditLog!.logMCPViolation(violation, {
                 source: 'custom-agent',
                 requestId,
@@ -518,8 +518,8 @@ export class KliraAgent {
 
           if (this.options.onOutputViolation === 'exception') {
             throw new KliraPolicyViolation(
-              `Output blocked by MCP protection: ${mcpResult.violations.map(v => v.description).join(', ')}`,
-              mcpResult.violations.map(v => ({
+              `Output blocked by MCP protection: ${mcpResult.matches.map(v => v.description).join(', ')}`,
+              mcpResult.matches.map(v => ({
                 ruleId: `mcp_${v.type}`,
                 message: v.description,
                 severity: v.severity,
@@ -545,7 +545,7 @@ export class KliraAgent {
         if (this.options.onOutputViolation === 'exception') {
           throw new KliraPolicyViolation(
             `Output blocked by Klira guardrails: ${result.reason}`,
-            result.violations
+            result.matches
           );
         } else if (this.options.onOutputViolation === 'redact') {
           // Replace content with filtered message
@@ -554,8 +554,8 @@ export class KliraAgent {
       }
 
       // Record violations for monitoring
-      if (result.violations.length > 0 && this.metrics) {
-        result.violations.forEach(violation => {
+      if (result.matches.length > 0 && this.metrics) {
+        result.matches.forEach(violation => {
           this.metrics!.recordGuardrailViolation(violation.ruleId, violation.severity, {
             framework: 'custom-agent',
             operation: 'output_check',
@@ -577,7 +577,7 @@ export class KliraAgent {
     options?: KliraAgentOptions
   ): void {
     // Record in metrics (legacy)
-    for (const violation of result.violations) {
+    for (const violation of result.matches) {
       this.metrics?.recordGuardrailViolation(
         violation.ruleId,
         violation.severity,
@@ -586,7 +586,7 @@ export class KliraAgent {
     }
 
     // Enhanced compliance recording in tracing
-    if (this.tracing && result.violations.length > 0) {
+    if (this.tracing && result.matches.length > 0) {
       const complianceMetadata: ComplianceMetadata = {
         agentName: metadata.agentName || 'custom-agent',
         agentVersion: metadata.agentVersion || '1.0.0',
@@ -598,7 +598,7 @@ export class KliraAgent {
       };
 
       // Record policy violations with comprehensive compliance data
-      this.tracing.recordPolicyViolations(result.violations, result, complianceMetadata);
+      this.tracing.recordPolicyMatches(result.matches, result, complianceMetadata);
       
       // Record policy usage tracking
       if (result.policyUsage) {

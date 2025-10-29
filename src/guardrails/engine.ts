@@ -3,7 +3,7 @@
  */
 
 import type {
-  PolicyViolation,
+  PolicyMatch,
   GuardrailResult,
   GuardrailOptions,
   Logger
@@ -124,7 +124,7 @@ export class GuardrailsEngine {
     const triggeredPolicies: string[] = [];
 
     try {
-      const violations: PolicyViolation[] = [];
+      const matches: PolicyMatch[] = [];
       let transformedContent = content;
       let blocked = false;
 
@@ -139,10 +139,10 @@ export class GuardrailsEngine {
         evaluatedPolicies.push(...fastPolicies);
 
         // Track triggered policies
-        const violatedPolicies = fastResult.violations.map(v => v.ruleId);
-        triggeredPolicies.push(...violatedPolicies);
+        const matchedPolicies = fastResult.matches.map(v => v.ruleId);
+        triggeredPolicies.push(...matchedPolicies);
 
-        violations.push(...fastResult.violations.map(v => ({
+        matches.push(...fastResult.matches.map(v => ({
           ...v,
           direction: 'input',
           timestamp: Date.now(),
@@ -152,32 +152,32 @@ export class GuardrailsEngine {
         transformedContent = content;
         blocked = blocked || fastResult.blocked;
 
-        this.logger.debug(`Fast rules found ${fastResult.violations.length} violations`);
+        this.logger.debug(`Fast rules found ${fastResult.matches.length} matches`);
       }
 
       // Layer 2: LLM Fallback (for complex evaluation)
       if (this.config.llmFallbackEnabled && !blocked) {
         const llmResult = await this.llmFallback.evaluateWithLLM(
           transformedContent,
-          violations,
+          matches,
           { options }
         );
 
         if (llmResult) {
           const llmPolicies = ['llm-content-safety', 'llm-policy-check'];
           evaluatedPolicies.push(...llmPolicies);
-          
-          const llmTriggeredPolicies = llmResult.violations.map(v => v.ruleId);
+
+          const llmTriggeredPolicies = llmResult.matches.map(v => v.ruleId);
           triggeredPolicies.push(...llmTriggeredPolicies);
-          
-          violations.push(...llmResult.violations.map(v => ({
+
+          matches.push(...llmResult.matches.map(v => ({
             ...v,
             direction: 'input',
             timestamp: Date.now(),
           })));
-          
+
           blocked = blocked || !llmResult.safe;
-          
+
           if (llmResult.modifiedContent) {
             transformedContent = llmResult.modifiedContent;
           }
@@ -188,8 +188,8 @@ export class GuardrailsEngine {
 
       // Layer 3: Generate augmentation guidelines
       let guidelines: string[] = [];
-      if (this.config.augmentationEnabled && (triggeredPolicies.length > 0 || violations.length > 0)) {
-        guidelines = this.augmentation.generateGuidelines(violations, triggeredPolicies);
+      if (this.config.augmentationEnabled && (triggeredPolicies.length > 0 || matches.length > 0)) {
+        guidelines = this.augmentation.generateGuidelines(matches, triggeredPolicies);
         this.logger.debug(`Generated ${guidelines.length} augmentation guidelines from ${triggeredPolicies.length} triggered policies`);
       }
 
@@ -200,10 +200,10 @@ export class GuardrailsEngine {
       return {
         allowed: !blocked,
         blocked,
-        violations,
+        matches,
         transformedInput: transformedContent !== content ? transformedContent : undefined,
         guidelines,
-        reason: this.createReasonMessage(violations, blocked),
+        reason: this.createReasonMessage(matches, blocked),
         evaluationDuration: duration,
         triggeredPolicies: uniqueTriggeredPolicies,
         direction: 'input',
@@ -225,7 +225,7 @@ export class GuardrailsEngine {
         return {
           allowed: false,
           blocked: true,
-          violations: [{
+          matches: [{
             ruleId: 'system-error',
             message: 'Guardrails evaluation failed',
             severity: 'high',
@@ -243,7 +243,7 @@ export class GuardrailsEngine {
         return {
           allowed: true,
           blocked: false,
-          violations: [],
+          matches: [],
           reason: 'System error - allowing with warning',
           evaluationDuration: duration,
           triggeredPolicies: [],
@@ -269,25 +269,25 @@ export class GuardrailsEngine {
     const triggeredPolicies: string[] = [];
 
     try {
-      const violations: PolicyViolation[] = [];
+      const matches: PolicyMatch[] = [];
       let transformedContent = content;
       let blocked = false;
 
       // Layer 1: Fast Rules (pattern matching for outbound)
       if (this.config.fastRulesEnabled) {
-        const fastResult = this.fastRules.isYAMLInitialized() 
+        const fastResult = this.fastRules.isYAMLInitialized()
           ? this.fastRules.evaluateWithDirection(content, 'outbound')
           : this.fastRules.evaluate(content);
-        
+
         // Track which policies were evaluated
         const fastPolicies = this.fastRules.getPolicyIds();
         evaluatedPolicies.push(...fastPolicies);
-        
+
         // Track triggered policies
-        const violatedPolicies = fastResult.violations.map(v => v.ruleId);
-        triggeredPolicies.push(...violatedPolicies);
-        
-        violations.push(...fastResult.violations.map(v => ({
+        const matchedPolicies = fastResult.matches.map(v => v.ruleId);
+        triggeredPolicies.push(...matchedPolicies);
+
+        matches.push(...fastResult.matches.map(v => ({
           ...v,
           direction: 'output',
           timestamp: Date.now(),
@@ -297,32 +297,32 @@ export class GuardrailsEngine {
         transformedContent = content;
         blocked = blocked || fastResult.blocked;
 
-        this.logger.debug(`Fast rules (output) found ${fastResult.violations.length} violations`);
+        this.logger.debug(`Fast rules (output) found ${fastResult.matches.length} matches`);
       }
 
       // Layer 2: LLM Fallback (for complex evaluation)
       if (this.config.llmFallbackEnabled && !blocked) {
         const llmResult = await this.llmFallback.evaluateWithLLM(
           transformedContent,
-          violations,
+          matches,
           { options, direction: 'outbound' }
         );
 
         if (llmResult) {
           const llmPolicies = ['llm-content-safety', 'llm-policy-check'];
           evaluatedPolicies.push(...llmPolicies);
-          
-          const llmTriggeredPolicies = llmResult.violations.map(v => v.ruleId);
+
+          const llmTriggeredPolicies = llmResult.matches.map(v => v.ruleId);
           triggeredPolicies.push(...llmTriggeredPolicies);
-          
-          violations.push(...llmResult.violations.map(v => ({
+
+          matches.push(...llmResult.matches.map(v => ({
             ...v,
             direction: 'output',
             timestamp: Date.now(),
           })));
-          
+
           blocked = blocked || !llmResult.safe;
-          
+
           if (llmResult.modifiedContent) {
             transformedContent = llmResult.modifiedContent;
           }
@@ -333,8 +333,8 @@ export class GuardrailsEngine {
 
       // Layer 3: Generate augmentation guidelines
       let guidelines: string[] = [];
-      if (this.config.augmentationEnabled && (triggeredPolicies.length > 0 || violations.length > 0)) {
-        guidelines = this.augmentation.generateGuidelines(violations, triggeredPolicies);
+      if (this.config.augmentationEnabled && (triggeredPolicies.length > 0 || matches.length > 0)) {
+        guidelines = this.augmentation.generateGuidelines(matches, triggeredPolicies);
         this.logger.debug(`Generated ${guidelines.length} augmentation guidelines from ${triggeredPolicies.length} triggered policies`);
       }
 
@@ -345,10 +345,10 @@ export class GuardrailsEngine {
       return {
         allowed: !blocked,
         blocked,
-        violations,
+        matches,
         transformedInput: transformedContent !== content ? transformedContent : undefined,
         guidelines,
-        reason: this.createReasonMessage(violations, blocked),
+        reason: this.createReasonMessage(matches, blocked),
         evaluationDuration: duration,
         triggeredPolicies: uniqueTriggeredPolicies,
         direction: 'output',
@@ -364,13 +364,13 @@ export class GuardrailsEngine {
     } catch (error) {
       const duration = Date.now() - startTime;
       this.logger.error(`Output guardrails evaluation failed: ${error}`);
-      
+
       // Handle failure based on failure mode
       if (this.config.failureMode === 'closed') {
         return {
           allowed: false,
           blocked: true,
-          violations: [{
+          matches: [{
             ruleId: 'system-error',
             message: 'Output guardrails evaluation failed',
             severity: 'high',
@@ -388,7 +388,7 @@ export class GuardrailsEngine {
         return {
           allowed: true,
           blocked: false,
-          violations: [],
+          matches: [],
           reason: 'System error - allowing with warning',
           evaluationDuration: duration,
           triggeredPolicies: [],
@@ -401,46 +401,46 @@ export class GuardrailsEngine {
   /**
    * Augment prompt with policy guidelines
    */
-  augmentPrompt(prompt: string, violations: PolicyViolation[]): string {
+  augmentPrompt(prompt: string, matches: PolicyMatch[]): string {
     if (!this.config.augmentationEnabled) {
       return prompt;
     }
 
-    return this.augmentation.augmentPrompt(prompt, violations);
+    return this.augmentation.augmentPrompt(prompt, matches);
   }
 
   /**
    * Create system message with guidelines
    */
-  createSystemMessage(violations: PolicyViolation[]): string {
+  createSystemMessage(matches: PolicyMatch[]): string {
     if (!this.config.augmentationEnabled) {
       return '';
     }
 
-    return this.augmentation.createSystemMessage(violations);
+    return this.augmentation.createSystemMessage(matches);
   }
 
   /**
-   * Create reason message from violations
+   * Create reason message from matches
    */
-  private createReasonMessage(violations: PolicyViolation[], blocked: boolean): string {
-    if (violations.length === 0) {
-      return 'No policy violations detected';
+  private createReasonMessage(matches: PolicyMatch[], blocked: boolean): string {
+    if (matches.length === 0) {
+      return 'No policy matches detected';
     }
 
-    const criticalViolations = violations.filter(v => v.severity === 'critical');
-    const highViolations = violations.filter(v => v.severity === 'high');
+    const criticalMatches = matches.filter(v => v.severity === 'critical');
+    const highMatches = matches.filter(v => v.severity === 'high');
 
     if (blocked) {
-      if (criticalViolations.length > 0) {
-        return `Critical policy violations detected: ${criticalViolations.map(v => v.message).join(', ')}`;
-      } else if (highViolations.length > 0) {
-        return `High-severity policy violations detected: ${highViolations.map(v => v.message).join(', ')}`;
+      if (criticalMatches.length > 0) {
+        return `Critical policy matches detected: ${criticalMatches.map(v => v.message).join(', ')}`;
+      } else if (highMatches.length > 0) {
+        return `High-severity policy matches detected: ${highMatches.map(v => v.message).join(', ')}`;
       } else {
-        return `Policy violations detected: ${violations.map(v => v.message).join(', ')}`;
+        return `Policy matches detected: ${matches.map(v => v.message).join(', ')}`;
       }
     } else {
-      return `Policy warnings: ${violations.map(v => v.message).join(', ')}`;
+      return `Policy warnings: ${matches.map(v => v.message).join(', ')}`;
     }
   }
 

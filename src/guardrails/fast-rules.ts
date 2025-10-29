@@ -2,7 +2,7 @@
  * Fast rules engine for pattern-based policy evaluation
  */
 
-import type { PolicyRule, PolicyViolation, Logger } from '../types/index.js';
+import type { PolicyRule, PolicyMatch, Logger } from '../types/index.js';
 import { getLogger } from '../config/index.js';
 import { PolicyLoader, PolicyCache } from './policy-loader.js';
 import { CompiledPolicy, PolicyEvaluationResult } from '../types/policies.js';
@@ -172,27 +172,27 @@ export class FastRulesEngine {
    * Evaluate content against YAML policies
    */
   private evaluateYAMLPolicies(content: string, direction: 'inbound' | 'outbound', startTime: number): PolicyEvaluationResult {
-    const violations: PolicyViolation[] = [];
+    const matches: PolicyMatch[] = [];
     let transformedContent = content;
     let blocked = false;
     const matchedPolicies: string[] = [];
 
     // Filter policies by direction
-    const applicablePolicies = this.policies.filter(policy => 
+    const applicablePolicies = this.policies.filter(policy =>
       policy.direction === 'both' || policy.direction === direction
     );
 
     for (const policy of applicablePolicies) {
       let policyMatched = false;
-      
+
       // Check compiled regex patterns
       if (policy.compiledPatterns) {
         for (const pattern of policy.compiledPatterns) {
-          const matches = content.match(pattern);
-          if (matches) {
+          const matchResults = content.match(pattern);
+          if (matchResults) {
             policyMatched = true;
-            this.addPolicyViolation(violations, policy, matches, 'pattern');
-            
+            this.addPolicyMatch(matches, policy, matchResults, 'pattern');
+
             if (policy.action === 'block') {
               blocked = true;
             }
@@ -200,14 +200,14 @@ export class FastRulesEngine {
           }
         }
       }
-      
+
       // Check domain patterns
       if (!policyMatched && policy.domainPatterns) {
         for (const domainPattern of policy.domainPatterns) {
-          const matches = content.match(domainPattern);
-          if (matches) {
+          const matchResults = content.match(domainPattern);
+          if (matchResults) {
             policyMatched = true;
-            this.addPolicyViolation(violations, policy, matches, 'domain');
+            this.addPolicyMatch(matches, policy, matchResults, 'domain');
 
             if (policy.action === 'block') {
               blocked = true;
@@ -236,8 +236,8 @@ export class FastRulesEngine {
           // Calculate confidence based on similarity
           const confidence = this.fuzzyMatcher.calculateConfidence(bestMatch.similarity);
 
-          // Create violation with fuzzy match metadata
-          const violation: PolicyViolation = {
+          // Create match with fuzzy match metadata
+          const match: PolicyMatch = {
             ruleId: policy.id,
             message: `${policy.description} (fuzzy match: ${bestMatch.similarity}% similar to "${bestMatch.domain}")`,
             severity: policy.severity || 'medium',
@@ -251,7 +251,7 @@ export class FastRulesEngine {
             },
           };
 
-          violations.push(violation);
+          matches.push(match);
           this.logger.debug(
             `Policy ${policy.id} triggered via fuzzy matching (${bestMatch.similarity}% similarity)`
           );
@@ -269,7 +269,7 @@ export class FastRulesEngine {
     }
 
     return {
-      violations,
+      matches,
       blocked,
       transformedContent,
       matchedPolicies,
@@ -278,31 +278,31 @@ export class FastRulesEngine {
   }
 
   /**
-   * Add policy violation from YAML policy match
+   * Add policy match from YAML policy match
    */
-  private addPolicyViolation(
-    violations: PolicyViolation[], 
-    policy: CompiledPolicy, 
-    matches: RegExpMatchArray, 
+  private addPolicyMatch(
+    matches: PolicyMatch[],
+    policy: CompiledPolicy,
+    matchResults: RegExpMatchArray,
     matchType: 'pattern' | 'domain'
   ): void {
-    const violation: PolicyViolation = {
+    const match: PolicyMatch = {
       ruleId: policy.id,
       message: policy.description,
       severity: policy.severity || 'medium',
       blocked: policy.action === 'block',
-      matched: matches[0],
+      matched: matchResults[0],
     };
-    
-    if (matches.index !== undefined) {
-      violation.position = {
-        start: matches.index,
-        end: matches.index + matches[0].length,
+
+    if (matchResults.index !== undefined) {
+      match.position = {
+        start: matchResults.index,
+        end: matchResults.index + matchResults[0].length,
       };
     }
-    
-    violations.push(violation);
-    this.logger.debug(`Policy ${policy.id} triggered (${matchType}): ${matches[0]}`);
+
+    matches.push(match);
+    this.logger.debug(`Policy ${policy.id} triggered (${matchType}): ${matchResults[0]}`);
   }
 
   /**
@@ -310,12 +310,12 @@ export class FastRulesEngine {
    */
   private evaluateLegacyRules(content: string, startTime: number): PolicyEvaluationResult {
     const legacyResult = this.evaluate(content);
-    
+
     return {
-      violations: legacyResult.violations,
+      matches: legacyResult.matches,
       blocked: legacyResult.blocked,
       transformedContent: legacyResult.transformedContent,
-      matchedPolicies: legacyResult.violations.map(v => v.ruleId),
+      matchedPolicies: legacyResult.matches.map(v => v.ruleId),
       processingTime: Date.now() - startTime,
     };
   }
@@ -324,44 +324,44 @@ export class FastRulesEngine {
    * Evaluate content against all rules (legacy method)
    */
   evaluate(content: string): {
-    violations: PolicyViolation[];
+    matches: PolicyMatch[];
     transformedContent: string;
     blocked: boolean;
   } {
-    const violations: PolicyViolation[] = [];
+    const matches: PolicyMatch[] = [];
     const transformedContent = content; // Never modified - content is unchanged
     let blocked = false;
 
     for (const rule of this.rules) {
-      const matches = content.match(rule.pattern);
+      const matchResults = content.match(rule.pattern);
 
-      if (matches) {
-        this.logger.debug(`Rule ${rule.id} triggered with ${matches.length} matches`);
+      if (matchResults) {
+        this.logger.debug(`Rule ${rule.id} triggered with ${matchResults.length} matches`);
 
-        // Create violation
-        const violation: PolicyViolation = {
+        // Create match
+        const match: PolicyMatch = {
           ruleId: rule.id,
           message: rule.description,
           severity: rule.severity,
           blocked: rule.action === 'block',
           metadata: {
-            matches: matches.length,
-            matchedText: matches.slice(0, 3), // First 3 matches for logging
+            matches: matchResults.length,
+            matchedText: matchResults.slice(0, 3), // First 3 matches for logging
           },
         };
 
-        violations.push(violation);
+        matches.push(match);
 
         // Apply action (simplified - only track blocking)
         if (rule.action === 'block') {
           blocked = true;
         }
-        // 'warn' and 'allow' actions just create violations, don't block
+        // 'warn' and 'allow' actions just create matches, don't block
       }
     }
 
     return {
-      violations,
+      matches,
       transformedContent, // Always equals input content
       blocked,
     };

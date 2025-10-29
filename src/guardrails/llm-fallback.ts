@@ -2,7 +2,7 @@
  * LLM fallback service for sophisticated policy evaluation
  */
 
-import type { PolicyViolation, Logger } from '../types/index.js';
+import type { PolicyMatch, Logger } from '../types/index.js';
 import { getLogger } from '../config/index.js';
 import { PolicyDefinition } from '../types/policies.js';
 
@@ -12,7 +12,7 @@ export interface LLMService {
 
 export interface LLMEvaluationResult {
   safe: boolean;
-  violations: PolicyViolation[];
+  matches: PolicyMatch[];
   confidence: number;
   reasoning: string;
   suggestedAction: 'allow' | 'block' | 'modify';
@@ -74,7 +74,7 @@ export class LLMFallbackService {
    */
   async evaluateWithLLM(
     content: string,
-    fastRuleViolations: PolicyViolation[],
+    fastRuleMatches: PolicyMatch[],
     context?: any
   ): Promise<LLMEvaluationResult | null> {
     if (!this.fallbackEnabled || !this.llmService) {
@@ -84,7 +84,7 @@ export class LLMFallbackService {
 
     try {
       const result = await this.llmService.evaluate(content, {
-        fastRuleViolations,
+        fastRuleMatches,
         policies: this.policies,
         direction: context?.direction || 'inbound',
         ...context,
@@ -208,7 +208,7 @@ class OpenAILLMService implements LLMService {
       
       return {
         safe: result.safe || false,
-        violations: this.parseViolations(result.violations || []),
+        matches: this.parseViolations(result.violations || []),
         confidence: result.confidence || 0.5,
         reasoning: result.reasoning || 'No reasoning provided',
         suggestedAction: result.suggested_action || 'block',
@@ -220,7 +220,7 @@ class OpenAILLMService implements LLMService {
       // Return a conservative fallback result
       return {
         safe: false,
-        violations: [],
+        matches: [],
         confidence: 0.0,
         reasoning: 'Evaluation failed, defaulting to unsafe',
         suggestedAction: 'block',
@@ -228,7 +228,7 @@ class OpenAILLMService implements LLMService {
     }
   }
 
-  private createEvaluationPrompt(fastRuleViolations: PolicyViolation[], context?: any): string {
+  private createEvaluationPrompt(fastRuleViolations: PolicyMatch[], context?: any): string {
     const violationsContext = fastRuleViolations.length > 0
       ? `\n\nPrevious rule violations detected:\n${fastRuleViolations
           .map(v => `- ${v.ruleId}: ${v.message}`)
@@ -300,7 +300,7 @@ Be thorough but balanced in your evaluation. Consider context and intent.`;
     return `ACTIVE POLICIES (${applicablePolicies.length}):\n${policyDescriptions}`;
   }
 
-  private parseViolations(violations: any[]): PolicyViolation[] {
+  private parseViolations(violations: any[]): PolicyMatch[] {
     return violations.map((v, index) => ({
       ruleId: v.policy_id || `llm-violation-${index}`,
       message: v.description || 'LLM-detected violation',
@@ -389,7 +389,7 @@ class AnthropicLLMService implements LLMService {
       
       return {
         safe: result.safe || false,
-        violations: this.parseViolations(result.violations || []),
+        matches: this.parseViolations(result.violations || []),
         confidence: result.confidence || 0.5,
         reasoning: result.reasoning || 'No reasoning provided',
         suggestedAction: result.suggested_action || 'block',
@@ -400,7 +400,7 @@ class AnthropicLLMService implements LLMService {
       
       return {
         safe: false,
-        violations: [],
+        matches: [],
         confidence: 0.0,
         reasoning: 'Evaluation failed, defaulting to unsafe',
         suggestedAction: 'block',
@@ -408,7 +408,7 @@ class AnthropicLLMService implements LLMService {
     }
   }
 
-  private createEvaluationPrompt(fastRuleViolations: PolicyViolation[], context?: any): string {
+  private createEvaluationPrompt(fastRuleViolations: PolicyMatch[], context?: any): string {
     const violationsContext = fastRuleViolations.length > 0
       ? `\n\nPrevious rule violations detected:\n${fastRuleViolations
           .map(v => `- ${v.ruleId}: ${v.message}`)
@@ -476,7 +476,7 @@ Be thorough but balanced in your evaluation. Consider context and intent.`;
     return `ACTIVE POLICIES (${applicablePolicies.length}):\n${policyDescriptions}`;
   }
 
-  private parseViolations(violations: any[]): PolicyViolation[] {
+  private parseViolations(violations: any[]): PolicyMatch[] {
     return violations.map((v, index) => ({
       ruleId: v.policy_id || `anthropic-violation-${index}`,
       message: v.description || 'Anthropic-detected violation',
@@ -545,7 +545,7 @@ class GoogleLLMService implements LLMService {
       
       return {
         safe: parsed.safe || false,
-        violations: this.parseViolations(parsed.violations || []),
+        matches: this.parseViolations(parsed.violations || []),
         confidence: parsed.confidence || 0.5,
         reasoning: parsed.reasoning || 'No reasoning provided',
         suggestedAction: parsed.suggested_action || 'block',
@@ -556,7 +556,7 @@ class GoogleLLMService implements LLMService {
       
       return {
         safe: false,
-        violations: [],
+        matches: [],
         confidence: 0.0,
         reasoning: 'Evaluation failed, defaulting to unsafe',
         suggestedAction: 'block',
@@ -564,7 +564,7 @@ class GoogleLLMService implements LLMService {
     }
   }
 
-  private createEvaluationPrompt(fastRuleViolations: PolicyViolation[], context?: any): string {
+  private createEvaluationPrompt(fastRuleViolations: PolicyMatch[], context?: any): string {
     const violationsContext = fastRuleViolations.length > 0
       ? `\n\nPrevious rule violations detected:\n${fastRuleViolations
           .map(v => `- ${v.ruleId}: ${v.message}`)
@@ -631,7 +631,7 @@ Be thorough but balanced in your evaluation. Consider context and intent.`;
     return `ACTIVE POLICIES (${applicablePolicies.length}):\n${policyDescriptions}`;
   }
 
-  private parseViolations(violations: any[]): PolicyViolation[] {
+  private parseViolations(violations: any[]): PolicyMatch[] {
     return violations.map((v, index) => ({
       ruleId: v.policy_id || `google-violation-${index}`,
       message: v.description || 'Google-detected violation',
@@ -707,7 +707,7 @@ class AzureOpenAILLMService implements LLMService {
       
       return {
         safe: result.safe || false,
-        violations: this.parseViolations(result.violations || []),
+        matches: this.parseViolations(result.violations || []),
         confidence: result.confidence || 0.5,
         reasoning: result.reasoning || 'No reasoning provided',
         suggestedAction: result.suggested_action || 'block',
@@ -718,7 +718,7 @@ class AzureOpenAILLMService implements LLMService {
       
       return {
         safe: false,
-        violations: [],
+        matches: [],
         confidence: 0.0,
         reasoning: 'Evaluation failed, defaulting to unsafe',
         suggestedAction: 'block',
@@ -726,7 +726,7 @@ class AzureOpenAILLMService implements LLMService {
     }
   }
 
-  private createEvaluationPrompt(fastRuleViolations: PolicyViolation[], context?: any): string {
+  private createEvaluationPrompt(fastRuleViolations: PolicyMatch[], context?: any): string {
     const violationsContext = fastRuleViolations.length > 0
       ? `\n\nPrevious rule violations detected:\n${fastRuleViolations
           .map(v => `- ${v.ruleId}: ${v.message}`)
@@ -793,7 +793,7 @@ Be thorough but balanced in your evaluation. Consider context and intent.`;
     return `ACTIVE POLICIES (${applicablePolicies.length}):\n${policyDescriptions}`;
   }
 
-  private parseViolations(violations: any[]): PolicyViolation[] {
+  private parseViolations(violations: any[]): PolicyMatch[] {
     return violations.map((v, index) => ({
       ruleId: v.policy_id || `azure-violation-${index}`,
       message: v.description || 'Azure OpenAI-detected violation',

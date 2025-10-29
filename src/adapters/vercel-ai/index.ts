@@ -149,7 +149,7 @@ export class VercelAIAdapter implements FrameworkAdapter {
       return {
         allowed: true,
         blocked: false,
-        violations: [],
+        matches: [],
         reason: 'No content to evaluate',
       };
     }
@@ -211,7 +211,7 @@ export class VercelAIAdapter implements FrameworkAdapter {
             if (options.onInputViolation === 'exception') {
               throw new KliraPolicyViolation(
                 `Input policy violation: ${inputResult.reason}`,
-                inputResult.violations
+                inputResult.matches
               );
             }
 
@@ -240,7 +240,7 @@ export class VercelAIAdapter implements FrameworkAdapter {
               if (options.onOutputViolation === 'exception') {
                 throw new KliraPolicyViolation(
                   `Output policy violation: ${outputResult.reason}`,
-                  outputResult.violations
+                  outputResult.matches
                 );
               }
 
@@ -322,7 +322,7 @@ export class VercelAIAdapter implements FrameworkAdapter {
             if (options.onInputViolation === 'exception') {
               throw new KliraPolicyViolation(
                 `Input policy violation: ${inputResult.reason}`,
-                inputResult.violations
+                inputResult.matches
               );
             }
             
@@ -366,7 +366,7 @@ export class VercelAIAdapter implements FrameworkAdapter {
               if (options.onOutputViolation === 'exception') {
                 throw new KliraPolicyViolation(
                   `Streaming output policy violation: ${streamResult.reason}`,
-                  streamResult.violations
+                  streamResult.matches
                 );
               }
               
@@ -518,7 +518,7 @@ export class VercelAIAdapter implements FrameworkAdapter {
     options?: VercelAIAdapterOptions
   ): void {
     // Record in metrics (legacy)
-    for (const violation of result.violations) {
+    for (const violation of result.matches) {
       this.metrics?.recordGuardrailViolation(
         violation.ruleId,
         violation.severity,
@@ -527,7 +527,7 @@ export class VercelAIAdapter implements FrameworkAdapter {
     }
 
     // Enhanced compliance recording in tracing
-    if (this.tracing && result.violations.length > 0) {
+    if (this.tracing && result.matches.length > 0) {
       const complianceMetadata: ComplianceMetadata = {
         agentName: metadata.agentName || 'vercel-ai-agent',
         agentVersion: metadata.agentVersion || '1.0.0',
@@ -539,7 +539,7 @@ export class VercelAIAdapter implements FrameworkAdapter {
       };
 
       // Record policy violations with comprehensive compliance data
-      this.tracing.recordPolicyViolations(result.violations, result, complianceMetadata);
+      this.tracing.recordPolicyMatches(result.matches, result, complianceMetadata);
       
       // Record policy usage tracking
       if (result.policyUsage) {

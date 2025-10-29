@@ -26,7 +26,7 @@ export interface PolicyRule {
   severity: 'low' | 'medium' | 'high' | 'critical';
 }
 
-export interface PolicyViolation {
+export interface PolicyMatch {
   ruleId: string;
   message: string;
   severity: 'low' | 'medium' | 'high' | 'critical';
@@ -49,7 +49,7 @@ export interface PolicyViolation {
 export interface GuardrailResult {
   allowed: boolean;
   blocked: boolean;
-  violations: PolicyViolation[];
+  matches: PolicyMatch[];
   transformedInput?: any;
   guidelines?: string[];
   reason?: string;
@@ -199,13 +199,13 @@ export interface StreamProcessor {
 
 // Error types
 export class KliraPolicyViolation extends Error {
-  public readonly violations: PolicyViolation[];
+  public readonly matches: PolicyMatch[];
   public readonly code = 'POLICY_VIOLATION';
 
-  constructor(message: string, violations: PolicyViolation[] = []) {
+  constructor(message: string, matches: PolicyMatch[] = []) {
     super(message);
     this.name = 'KliraPolicyViolation';
-    this.violations = violations;
+    this.matches = matches;
   }
 }
 
@@ -246,18 +246,18 @@ export interface ComplianceMetadata {
   evaluationTimestamp?: number;
 }
 
-export interface ViolationSpanEvent {
+export interface MatchSpanEvent {
   name: string;
   attributes: {
-    'violation.ruleId': string;
-    'violation.severity': string;
-    'violation.message': string;
-    'violation.blocked': boolean;
-    'violation.description'?: string;
-    'violation.category'?: string;
-    'violation.direction': string;
-    'violation.timestamp': number;
-    'violation.policyName'?: string;
+    'match.ruleId': string;
+    'match.severity': string;
+    'match.message': string;
+    'match.blocked': boolean;
+    'match.description'?: string;
+    'match.category'?: string;
+    'match.direction': string;
+    'match.timestamp': number;
+    'match.policyName'?: string;
   };
 }
 

@@ -27,7 +27,7 @@ export interface CompiledPolicy extends PolicyDefinition {
   domainPatterns?: RegExp[];
 }
 
-export interface PolicyViolation {
+export interface PolicyMatch {
   ruleId: string;
   message: string;
   severity: 'low' | 'medium' | 'high' | 'critical';
@@ -40,7 +40,7 @@ export interface PolicyViolation {
 }
 
 export interface PolicyEvaluationResult {
-  violations: PolicyViolation[];
+  matches: PolicyMatch[];
   blocked: boolean;
   transformedContent?: string;
   matchedPolicies: string[];

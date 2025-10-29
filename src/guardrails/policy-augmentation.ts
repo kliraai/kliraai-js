@@ -2,7 +2,7 @@
  * Policy augmentation system for enhancing prompts with guidelines
  */
 
-import type { PolicyViolation, Logger } from '../types/index.js';
+import type { PolicyMatch, Logger } from '../types/index.js';
 import { getLogger } from '../config/index.js';
 import { PolicyDefinition } from '../types/policies.js';
 
@@ -138,26 +138,26 @@ export class PolicyAugmentation {
   }
 
   /**
-   * Generate augmentation guidelines based on violations and triggered policies
+   * Generate augmentation guidelines based on matches and triggered policies
    */
-  generateGuidelines(violations: PolicyViolation[], triggeredPolicies: string[] = []): string[] {
+  generateGuidelines(matches: PolicyMatch[], triggeredPolicies: string[] = []): string[] {
     if (this.yamlInitialized) {
-      return this.generateYAMLGuidelines(violations, triggeredPolicies);
+      return this.generateYAMLGuidelines(matches, triggeredPolicies);
     }
 
     const applicableGuidelines: AugmentationGuideline[] = [];
-    const violationTypes = violations.map(v => v.ruleId);
-    const severityLevels = violations.map(v => v.severity);
+    const matchTypes = matches.map(v => v.ruleId);
+    const severityLevels = matches.map(v => v.severity);
 
     for (const guideline of this.guidelines) {
       let applicable = true;
 
       if (guideline.conditions) {
         if (guideline.conditions.violationTypes) {
-          const hasMatchingViolation = guideline.conditions.violationTypes.some(
-            type => violationTypes.includes(type)
+          const hasMatchingMatch = guideline.conditions.violationTypes.some(
+            type => matchTypes.includes(type)
           );
-          applicable = applicable && hasMatchingViolation;
+          applicable = applicable && hasMatchingMatch;
         }
 
         if (guideline.conditions.severityLevels) {
@@ -173,7 +173,7 @@ export class PolicyAugmentation {
       }
     }
 
-    if (violations.length === 0) {
+    if (matches.length === 0) {
       applicableGuidelines.push(
         ...this.guidelines.filter(g => !g.conditions || Object.keys(g.conditions).length === 0)
       );
@@ -190,9 +190,9 @@ export class PolicyAugmentation {
   /**
    * Create augmented prompt with guidelines
    */
-  augmentPrompt(originalPrompt: string, violations: PolicyViolation[]): string {
-    const guidelines = this.generateGuidelines(violations);
-    
+  augmentPrompt(originalPrompt: string, matches: PolicyMatch[]): string {
+    const guidelines = this.generateGuidelines(matches);
+
     if (guidelines.length === 0) {
       return originalPrompt;
     }
@@ -215,9 +215,9 @@ Please follow these guidelines in your response.`;
   /**
    * Create system message with guidelines
    */
-  createSystemMessage(violations: PolicyViolation[]): string {
-    const guidelines = this.generateGuidelines(violations);
-    
+  createSystemMessage(matches: PolicyMatch[]): string {
+    const guidelines = this.generateGuidelines(matches);
+
     if (guidelines.length === 0) {
       return '';
     }
@@ -250,7 +250,7 @@ Always adhere to these guidelines in your responses.`;
   /**
    * Generate guidelines from YAML policies
    */
-  private generateYAMLGuidelines(violations: PolicyViolation[], triggeredPolicies: string[] = []): string[] {
+  private generateYAMLGuidelines(matches: PolicyMatch[], triggeredPolicies: string[] = []): string[] {
     const guidelines: string[] = [];
     const processedPolicies = new Set<string>();
 
@@ -264,12 +264,12 @@ Always adhere to these guidelines in your responses.`;
       }
     }
 
-    for (const violation of violations) {
-      if (!processedPolicies.has(violation.ruleId)) {
-        const policyGuidelines = this.policyGuidelines.get(violation.ruleId);
+    for (const match of matches) {
+      if (!processedPolicies.has(match.ruleId)) {
+        const policyGuidelines = this.policyGuidelines.get(match.ruleId);
         if (policyGuidelines) {
           guidelines.push(...policyGuidelines);
-          processedPolicies.add(violation.ruleId);
+          processedPolicies.add(match.ruleId);
         }
       }
     }
@@ -283,7 +283,7 @@ Always adhere to these guidelines in your responses.`;
     }
 
     const uniqueGuidelines = Array.from(new Set(guidelines));
-    this.logger.debug(`Generated ${uniqueGuidelines.length} YAML-based guidelines from ${triggeredPolicies.length} triggered policies and ${violations.length} violations`);
+    this.logger.debug(`Generated ${uniqueGuidelines.length} YAML-based guidelines from ${triggeredPolicies.length} triggered policies and ${matches.length} matches`);
 
     return uniqueGuidelines.slice(0, 10);
   }

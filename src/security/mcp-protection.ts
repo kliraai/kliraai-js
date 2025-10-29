@@ -29,7 +29,7 @@ export interface MCPProtectionConfig {
 
 export interface MCPValidationResult {
   isValid: boolean;
-  violations: MCPViolation[];
+  matches: MCPViolation[];
   sanitizedContent?: string;
   confidence: number;
   riskScore: number;
@@ -118,7 +118,7 @@ export class MCPProtection {
     if (!this.config.enabled) {
       return {
         isValid: true,
-        violations: [],
+        matches: [],
         confidence: 1.0,
         riskScore: 0,
       };
@@ -128,7 +128,7 @@ export class MCPProtection {
     if (!content || typeof content !== 'string') {
       return {
         isValid: true,
-        violations: [],
+        matches: [],
         confidence: 1.0,
         riskScore: 0,
       };
@@ -198,7 +198,7 @@ export class MCPProtection {
 
     return {
       isValid,
-      violations,
+      matches: violations,
       sanitizedContent: (this.config.sanitizeOutputs && violations.length > 0) ? this.sanitizeContent(content, violations) : undefined,
       confidence,
       riskScore,
@@ -212,7 +212,7 @@ export class MCPProtection {
     if (!this.config.enabled) {
       return {
         isValid: true,
-        violations: [],
+        matches: [],
         confidence: 1.0,
         riskScore: 0,
       };
@@ -236,7 +236,7 @@ export class MCPProtection {
 
     return {
       isValid,
-      violations,
+      matches: violations,
       sanitizedContent: this.config.sanitizeOutputs ? this.sanitizeContent(content, violations) : undefined,
       confidence,
       riskScore,
@@ -250,7 +250,7 @@ export class MCPProtection {
     if (!this.config.enabled) {
       return {
         isValid: true,
-        violations: [],
+        matches: [],
         confidence: 1.0,
         riskScore: 0,
       };
@@ -322,7 +322,7 @@ export class MCPProtection {
 
     return {
       isValid,
-      violations,
+      matches: violations,
       confidence,
       riskScore,
     };
