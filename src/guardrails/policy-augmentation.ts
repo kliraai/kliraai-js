@@ -138,15 +138,13 @@ export class PolicyAugmentation {
   }
 
   /**
-   * Generate augmentation guidelines based on violations (enhanced for YAML)
+   * Generate augmentation guidelines based on violations and triggered policies
    */
-  generateGuidelines(violations: PolicyViolation[]): string[] {
-    // If YAML policies are loaded, prioritize them
+  generateGuidelines(violations: PolicyViolation[], triggeredPolicies: string[] = []): string[] {
     if (this.yamlInitialized) {
-      return this.generateYAMLGuidelines(violations);
+      return this.generateYAMLGuidelines(violations, triggeredPolicies);
     }
-    
-    // Fallback to legacy guidelines
+
     const applicableGuidelines: AugmentationGuideline[] = [];
     const violationTypes = violations.map(v => v.ruleId);
     const severityLevels = violations.map(v => v.severity);
@@ -154,9 +152,7 @@ export class PolicyAugmentation {
     for (const guideline of this.guidelines) {
       let applicable = true;
 
-      // Check if guideline has conditions
       if (guideline.conditions) {
-        // Check violation types
         if (guideline.conditions.violationTypes) {
           const hasMatchingViolation = guideline.conditions.violationTypes.some(
             type => violationTypes.includes(type)
@@ -164,7 +160,6 @@ export class PolicyAugmentation {
           applicable = applicable && hasMatchingViolation;
         }
 
-        // Check severity levels
         if (guideline.conditions.severityLevels) {
           const hasMatchingSeverity = guideline.conditions.severityLevels.some(
             severity => severityLevels.includes(severity as any)
@@ -178,14 +173,12 @@ export class PolicyAugmentation {
       }
     }
 
-    // If no violations, include general guidelines
     if (violations.length === 0) {
       applicableGuidelines.push(
         ...this.guidelines.filter(g => !g.conditions || Object.keys(g.conditions).length === 0)
       );
     }
 
-    // Sort by priority and return guideline text
     const guidelines = applicableGuidelines
       .sort((a, b) => b.priority - a.priority)
       .map(g => g.guideline);
@@ -257,11 +250,20 @@ Always adhere to these guidelines in your responses.`;
   /**
    * Generate guidelines from YAML policies
    */
-  private generateYAMLGuidelines(violations: PolicyViolation[]): string[] {
+  private generateYAMLGuidelines(violations: PolicyViolation[], triggeredPolicies: string[] = []): string[] {
     const guidelines: string[] = [];
     const processedPolicies = new Set<string>();
-    
-    // Get guidelines from violated policies
+
+    for (const policyId of triggeredPolicies) {
+      if (!processedPolicies.has(policyId)) {
+        const policyGuidelines = this.policyGuidelines.get(policyId);
+        if (policyGuidelines) {
+          guidelines.push(...policyGuidelines);
+          processedPolicies.add(policyId);
+        }
+      }
+    }
+
     for (const violation of violations) {
       if (!processedPolicies.has(violation.ruleId)) {
         const policyGuidelines = this.policyGuidelines.get(violation.ruleId);
@@ -271,8 +273,7 @@ Always adhere to these guidelines in your responses.`;
         }
       }
     }
-    
-    // If no specific guidelines found, add general safety guidelines
+
     if (guidelines.length === 0) {
       guidelines.push(
         'Ensure all responses are safe, respectful, and do not contain harmful content.',
@@ -280,11 +281,10 @@ Always adhere to these guidelines in your responses.`;
         'Be helpful, clear, and concise in your responses while being thorough when necessary.'
       );
     }
-    
-    // Remove duplicates and limit to top 10 guidelines
+
     const uniqueGuidelines = Array.from(new Set(guidelines));
-    this.logger.debug(`Generated ${uniqueGuidelines.length} YAML-based guidelines`);
-    
+    this.logger.debug(`Generated ${uniqueGuidelines.length} YAML-based guidelines from ${triggeredPolicies.length} triggered policies and ${violations.length} violations`);
+
     return uniqueGuidelines.slice(0, 10);
   }
 

@@ -188,9 +188,9 @@ export class GuardrailsEngine {
 
       // Layer 3: Generate augmentation guidelines
       let guidelines: string[] = [];
-      if (this.config.augmentationEnabled && violations.length > 0) {
-        guidelines = this.augmentation.generateGuidelines(violations);
-        this.logger.debug(`Generated ${guidelines.length} augmentation guidelines`);
+      if (this.config.augmentationEnabled && (triggeredPolicies.length > 0 || violations.length > 0)) {
+        guidelines = this.augmentation.generateGuidelines(violations, triggeredPolicies);
+        this.logger.debug(`Generated ${guidelines.length} augmentation guidelines from ${triggeredPolicies.length} triggered policies`);
       }
 
       const duration = Date.now() - startTime;
@@ -333,9 +333,9 @@ export class GuardrailsEngine {
 
       // Layer 3: Generate augmentation guidelines
       let guidelines: string[] = [];
-      if (this.config.augmentationEnabled && violations.length > 0) {
-        guidelines = this.augmentation.generateGuidelines(violations);
-        this.logger.debug(`Generated ${guidelines.length} augmentation guidelines`);
+      if (this.config.augmentationEnabled && (triggeredPolicies.length > 0 || violations.length > 0)) {
+        guidelines = this.augmentation.generateGuidelines(violations, triggeredPolicies);
+        this.logger.debug(`Generated ${guidelines.length} augmentation guidelines from ${triggeredPolicies.length} triggered policies`);
       }
 
       const duration = Date.now() - startTime;
