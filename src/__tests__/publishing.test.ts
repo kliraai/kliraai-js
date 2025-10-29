@@ -100,12 +100,13 @@ describe('Publishing Configuration', () => {
   describe('Dependencies', () => {
     it('should have production dependencies properly configured', () => {
       const deps = packageJson.dependencies;
-      
+
       // Core OpenTelemetry dependencies
       expect(deps['@opentelemetry/api']).toBeDefined();
       expect(deps['@opentelemetry/sdk-node']).toBeDefined();
-      expect(deps['@opentelemetry/exporter-trace-otlp-http']).toBeDefined();
-      
+      expect(deps['@opentelemetry/exporter-trace-otlp-proto']).toBeDefined();
+      expect(deps['@opentelemetry/exporter-metrics-otlp-proto']).toBeDefined();
+
       // Utility dependencies
       expect(deps['js-yaml']).toBeDefined();
       expect(deps['zod']).toBeDefined();
