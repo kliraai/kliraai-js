@@ -1,5 +1,6 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
 import * as yaml from 'js-yaml';
 import { PolicyDefinition, PolicyFile, CompiledPolicy } from '../types/policies.js';
 
@@ -294,12 +295,29 @@ export class PolicyLoader {
   }
 
   async loadDefault(): Promise<PolicyFile> {
-    // Try to load from multiple possible locations
+    // Module-relative paths for both ESM and CJS
+    const moduleDir = typeof __dirname !== 'undefined'
+      ? __dirname
+      : path.dirname(fileURLToPath(import.meta.url));
+
+    // Try paths in priority order:
+    // 1. dist/guardrails/ (npm package structure)
+    // 2. src/guardrails/ (development structure)
+    // 3. Legacy paths (backward compatibility)
     const possiblePaths = [
+      // Production paths (npm package after build)
+      path.join(moduleDir, '../guardrails/default_policies.yaml'),
+      path.join(moduleDir, '../../guardrails/default_policies.yaml'),
+      path.join(moduleDir, 'default_policies.yaml'),
+
+      // Development paths (running from src/)
+      path.join(moduleDir, '../src/guardrails/default_policies.yaml'),
+      path.join(process.cwd(), 'src/guardrails/default_policies.yaml'),
+
+      // Legacy paths (backward compatibility)
       './src/guardrails/default_policies.yaml',
       './guardrails/default_policies.yaml',
       '../guardrails/default_policies.yaml',
-      path.join(process.cwd(), 'src/guardrails/default_policies.yaml'),
     ];
 
     for (const filePath of possiblePaths) {
@@ -311,7 +329,7 @@ export class PolicyLoader {
       }
     }
 
-    throw new Error('Could not find default policies file in any expected location');
+    throw new Error('Could not find default policies file in any expected location. Searched paths: ' + possiblePaths.join(', '));
   }
 
   clearCache(): void {

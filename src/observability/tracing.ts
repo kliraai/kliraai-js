@@ -13,14 +13,12 @@ import type {
   SpanAttributes,
   TraceMetadata,
   HierarchyContext,
-  Logger,
   PolicyMatch,
   GuardrailResult,
   ComplianceMetadata,
   MatchSpanEvent,
   PolicyUsageInfo
 } from '../types/index.js';
-import { getLogger } from '../config/index.js';
 
 export interface TracingConfig {
   serviceName: string;
@@ -35,13 +33,11 @@ export class KliraTracing {
   private static instance: KliraTracing | null = null;
   private sdk: NodeSDK | null = null;
   private tracer = trace.getTracer('klira-ai-sdk');
-  private logger: Logger;
   private initialized: boolean = false;
   private config: TracingConfig;
 
   private constructor(config: TracingConfig) {
     this.config = config;
-    this.logger = getLogger();
   }
 
   /**
@@ -84,8 +80,6 @@ export class KliraTracing {
     }
 
     try {
-      this.logger.info('Initializing OpenTelemetry tracing...');
-
       // Create resource
       const resource = resourceFromAttributes({
         [ATTR_SERVICE_NAME]: this.config.serviceName,
@@ -117,10 +111,7 @@ export class KliraTracing {
       // Start the SDK
       this.sdk.start();
       this.initialized = true;
-
-      this.logger.info('OpenTelemetry tracing initialized successfully');
     } catch (error) {
-      this.logger.error(`Failed to initialize tracing: ${error}`);
       throw error;
     }
   }
@@ -340,9 +331,8 @@ export class KliraTracing {
     const contextAttributes = {
       'klira.organization_id': organizationId,
     };
-    
+
     this.addAttributes(contextAttributes);
-    this.logger.debug(`Set organization context: ${organizationId}`);
   }
 
   /**
@@ -352,9 +342,8 @@ export class KliraTracing {
     const contextAttributes = {
       'klira.project_id': projectId,
     };
-    
+
     this.addAttributes(contextAttributes);
-    this.logger.debug(`Set project context: ${projectId}`);
   }
 
   /**
@@ -368,9 +357,8 @@ export class KliraTracing {
     if (userId) {
       contextAttributes['klira.user_id'] = userId;
     }
-    
+
     this.addAttributes(contextAttributes);
-    this.logger.debug(`Set conversation context: ${conversationId}${userId ? ` for user: ${userId}` : ''}`);
   }
 
   /**
@@ -400,9 +388,8 @@ export class KliraTracing {
     if (context.userId) {
       contextAttributes['klira.user_id'] = context.userId;
     }
-    
+
     this.addAttributes(contextAttributes);
-    this.logger.debug(`Set hierarchy context:`, context);
   }
 
   /**
@@ -418,11 +405,10 @@ export class KliraTracing {
     // Note: OpenTelemetry doesn't provide direct access to span attributes
     // This is a best-effort implementation
     const context: Partial<TraceMetadata> = {};
-    
+
     // In a real implementation, we would need to store context separately
     // or use OpenTelemetry context API to store and retrieve these values
-    this.logger.debug('getCurrentContext called - returning empty context (span attributes not directly accessible)');
-    
+
     return context;
   }
 
@@ -442,9 +428,8 @@ export class KliraTracing {
         }
       });
     }
-    
+
     this.addAttributes(contextAttributes);
-    this.logger.debug(`Set external prompt context: ${promptId} with model: ${model}`);
   }
 
   /**
@@ -457,7 +442,6 @@ export class KliraTracing {
   ): void {
     const span = trace.getActiveSpan();
     if (!span) {
-      this.logger.warn('No active span found for recording policy violations');
       return;
     }
 
@@ -555,8 +539,6 @@ export class KliraTracing {
 
       span.addEvent(`policy.violation.${violation.severity}`, eventAttributes);
     });
-
-    this.logger.debug(`Recorded ${violations.length} policy violations in span`);
   }
 
   /**
@@ -565,7 +547,6 @@ export class KliraTracing {
   recordPolicyUsage(policyUsage: PolicyUsageInfo): void {
     const span = trace.getActiveSpan();
     if (!span) {
-      this.logger.warn('No active span found for recording policy usage');
       return;
     }
 
@@ -589,10 +570,6 @@ export class KliraTracing {
       'usage.direction': policyUsage.direction,
       'usage.timestamp': Date.now(),
     });
-
-    this.logger.debug(
-      `Recorded policy usage: ${policyUsage.evaluatedPolicies.length} evaluated, ${policyUsage.triggeredPolicies.length} triggered`
-    );
   }
 
   /**
@@ -626,9 +603,8 @@ export class KliraTracing {
         contextAttributes[`klira.compliance.tag.${key}`] = value;
       });
     }
-    
+
     this.addAttributes(contextAttributes);
-    this.logger.debug('Set compliance metadata on span');
   }
 
   /**
@@ -644,7 +620,6 @@ export class KliraTracing {
   async shutdown(): Promise<void> {
     if (this.sdk) {
       await this.sdk.shutdown();
-      this.logger.info('OpenTelemetry tracing shut down');
     }
   }
 

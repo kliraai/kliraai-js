@@ -37,81 +37,9 @@ export class FastRulesEngine {
    * Initialize with default security and compliance rules
    */
   private initializeDefaultRules(): void {
-    const defaultRules: FastRulePattern[] = [
-      // PII Detection
-      {
-        id: 'pii-email',
-        pattern: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g,
-        action: 'block',
-        severity: 'high',
-        description: 'Email address detected',
-      },
-      {
-        id: 'pii-ssn',
-        pattern: /\b\d{3}-?\d{2}-?\d{4}\b/g,
-        action: 'block',
-        severity: 'critical',
-        description: 'Social Security Number pattern detected',
-      },
-      {
-        id: 'pii-phone',
-        pattern: /\b(?:\+?1[-.\s]?)?\(?([0-9]{3})\)?[-.\s]?([0-9]{3})[-.\s]?([0-9]{4})\b/g,
-        action: 'warn',
-        severity: 'medium',
-        description: 'Phone number pattern detected',
-      },
-      {
-        id: 'pii-credit-card',
-        pattern: /\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13}|3[0-9]{13}|6(?:011|5[0-9]{2})[0-9]{12})\b/g,
-        action: 'block',
-        severity: 'critical',
-        description: 'Credit card number pattern detected',
-      },
-
-      // Content Safety
-      {
-        id: 'harmful-violence',
-        pattern: /\b(kill|murder|assault|violence|harm|hurt|attack)\b/gi,
-        action: 'warn',
-        severity: 'high',
-        description: 'Potentially violent content detected',
-      },
-      {
-        id: 'harmful-illegal',
-        pattern: /\b(drugs|illegal|hack|exploit|malware|virus)\b/gi,
-        action: 'warn',
-        severity: 'medium',
-        description: 'Potentially illegal content detected',
-      },
-
-      // Prompt Injection
-      {
-        id: 'prompt-injection-ignore',
-        pattern: /ignore\s+(all\s+previous|previous|all|the)\s+(instructions?|prompts?|rules?)/gi,
-        action: 'block',
-        severity: 'high',
-        description: 'Prompt injection attempt detected',
-      },
-      {
-        id: 'prompt-injection-system',
-        pattern: /\b(system|assistant|user):\s*$/gim,
-        action: 'warn',
-        severity: 'medium',
-        description: 'Potential system prompt manipulation',
-      },
-
-      // API Keys and Secrets
-      {
-        id: 'secret-api-key',
-        pattern: /\b[A-Za-z0-9]{32,}\b/g,
-        action: 'block',
-        severity: 'critical',
-        description: 'Potential API key or secret detected',
-      },
-    ];
-
-    this.rules = defaultRules;
-    this.logger.debug(`Initialized ${defaultRules.length} default fast rules`);
+    // Hardcoded fallback rules have been removed - YAML policies are now required
+    this.rules = [];
+    this.logger.debug('FastRulesEngine initialized without hardcoded rules - YAML policies required');
   }
 
   /**
@@ -139,17 +67,22 @@ export class FastRulesEngine {
    */
   async initialize(configPath?: string): Promise<void> {
     try {
-      const policyFile = configPath 
+      const policyFile = configPath
         ? await this.policyLoader.loadFromYAML(configPath)
         : await this.policyLoader.loadDefault();
-      
+
       this.policies = this.policyLoader.compilePolicies(policyFile.policies);
       this.initialized = true;
-      
-      this.logger.debug(`Initialized FastRulesEngine with ${this.policies.length} YAML policies`);
+
+      this.logger.info(`Initialized FastRulesEngine with ${this.policies.length} YAML policies`);
     } catch (error) {
-      this.logger.warn(`Failed to load YAML policies, using hardcoded rules: ${error}`);
-      // Keep using hardcoded rules as fallback
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Failed to load YAML policies: ${errorMessage}`);
+      throw new Error(
+        `FastRulesEngine initialization failed - YAML policy files are required but could not be loaded. ` +
+        `Error: ${errorMessage}. ` +
+        `Please ensure the SDK is properly built and distributed with policy files.`
+      );
     }
   }
 
@@ -428,7 +361,7 @@ export class FastRulesEngine {
   getPolicyCount(): { yaml: number; legacy: number } {
     return {
       yaml: this.policies.length,
-      legacy: this.rules.length,
+      legacy: 0, // Hardcoded rules have been removed
     };
   }
 

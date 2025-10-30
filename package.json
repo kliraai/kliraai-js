@@ -39,8 +39,9 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "npm run type-check && tsup",
-    "build:fast": "tsup",
+    "copy:policies": "mkdir -p dist/guardrails && cp src/guardrails/*.yaml dist/guardrails/",
+    "build": "npm run type-check && tsup && npm run copy:policies",
+    "build:fast": "tsup && npm run copy:policies",
     "dev": "tsup --watch",
     "test": "vitest",
     "test:coverage": "vitest --coverage",
