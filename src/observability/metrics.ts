@@ -22,7 +22,7 @@ export interface MetricsCollector {
   recordCost(inputCost: number, outputCost: number, metadata: TraceMetadata): void;
   
   // Guardrails metrics
-  recordGuardrailViolation(violationType: string, severity: string, metadata: TraceMetadata): void;
+  recordGuardrailViolation(violationType: string, metadata: TraceMetadata): void;
   recordGuardrailCheck(operation: string, durationMs: number, blocked: boolean): void;
 }
 
@@ -391,10 +391,9 @@ export class KliraMetrics implements MetricsCollector {
   /**
    * Record guardrail violation
    */
-  recordGuardrailViolation(violationType: string, severity: string, metadata: TraceMetadata): void {
+  recordGuardrailViolation(violationType: string, metadata: TraceMetadata): void {
     this.violationCounter.add(1, {
       violation_type: violationType,
-      severity,
       framework: metadata.framework || 'unknown',
       provider: metadata.provider || 'unknown',
     });

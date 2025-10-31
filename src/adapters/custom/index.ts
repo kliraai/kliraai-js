@@ -457,7 +457,7 @@ export class KliraAgent {
           // Record violations for monitoring
           if (result.matches.length > 0 && this.metrics) {
             result.matches.forEach(violation => {
-              this.metrics!.recordGuardrailViolation(violation.ruleId, violation.severity, {
+              this.metrics!.recordGuardrailViolation(violation.ruleId, {
                 framework: 'custom-agent',
                 operation: 'input_check',
                 provider: this.provider.name,
@@ -556,7 +556,7 @@ export class KliraAgent {
       // Record violations for monitoring
       if (result.matches.length > 0 && this.metrics) {
         result.matches.forEach(violation => {
-          this.metrics!.recordGuardrailViolation(violation.ruleId, violation.severity, {
+          this.metrics!.recordGuardrailViolation(violation.ruleId, {
             framework: 'custom-agent',
             operation: 'output_check',
             provider: this.provider.name,
@@ -580,7 +580,6 @@ export class KliraAgent {
     for (const violation of result.matches) {
       this.metrics?.recordGuardrailViolation(
         violation.ruleId,
-        violation.severity,
         metadata
       );
     }

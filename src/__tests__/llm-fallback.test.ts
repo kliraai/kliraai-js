@@ -22,7 +22,7 @@ const mockAnthropicResponse = {
     {
       policy_id: 'test-policy',
       type: 'harmful',
-      severity: 'high',
+      
       description: 'Detected harmful content',
     },
   ],
@@ -100,7 +100,7 @@ describe('LLM Fallback Service', () => {
         direction: 'both',
         description: 'Test policy for LLM evaluation',
         action: 'block',
-        severity: 'high',
+        
         guidelines: ['Test guideline'],
         patterns: ['test-pattern'],
       },
@@ -229,7 +229,6 @@ describe('LLM Fallback Service', () => {
       expect(result!.safe).toBe(false);
       expect(result!.matches).toHaveLength(1);
       expect(result!.matches[0].ruleId).toBe('test-policy');
-      expect(result!.matches[0].severity).toBe('high');
     });
 
     it.skip('should handle Anthropic API errors gracefully', async () => {

@@ -112,7 +112,7 @@ describe.skip('Error Handling and Edge Cases', () => {
           id: 'invalid-regex',
           pattern: new RegExp('[', 'gi') as any, // Invalid regex - unclosed bracket
           action: 'block',
-          severity: 'high',
+          
           description: 'Invalid regex pattern',
         });
       }).toThrow();

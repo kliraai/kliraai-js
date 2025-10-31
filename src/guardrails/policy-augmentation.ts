@@ -13,7 +13,6 @@ export interface AugmentationGuideline {
   priority: number;
   conditions?: {
     violationTypes?: string[];
-    severityLevels?: string[];
   };
 }
 
@@ -147,7 +146,6 @@ export class PolicyAugmentation {
 
     const applicableGuidelines: AugmentationGuideline[] = [];
     const matchTypes = matches.map(v => v.ruleId);
-    const severityLevels = matches.map(v => v.severity);
 
     for (const guideline of this.guidelines) {
       let applicable = true;
@@ -158,13 +156,6 @@ export class PolicyAugmentation {
             type => matchTypes.includes(type)
           );
           applicable = applicable && hasMatchingMatch;
-        }
-
-        if (guideline.conditions.severityLevels) {
-          const hasMatchingSeverity = guideline.conditions.severityLevels.some(
-            severity => severityLevels.includes(severity as any)
-          );
-          applicable = applicable && hasMatchingSeverity;
         }
       }
 

@@ -23,13 +23,13 @@ export interface PolicyRule {
   description: string;
   pattern?: string;
   action: 'block' | 'warn' | 'allow';
-  severity: 'low' | 'medium' | 'high' | 'critical';
+  // severity field removed for Python SDK parity
 }
 
 export interface PolicyMatch {
   ruleId: string;
   message: string;
-  severity: 'low' | 'medium' | 'high' | 'critical';
+  // severity field removed for Python SDK parity
   blocked: boolean;
   metadata?: Record<string, any>;
   // Additional compliance fields
@@ -153,7 +153,6 @@ export interface SpanAttributes {
   
   // Policy violation attributes (for compliance reporting)
   'klira.policy.violation.ruleId'?: string;
-  'klira.policy.violation.severity'?: string;
   'klira.policy.violation.description'?: string;
   'klira.policy.violation.blocked'?: boolean;
   'klira.policy.violation.category'?: string;
@@ -250,7 +249,6 @@ export interface MatchSpanEvent {
   name: string;
   attributes: {
     'match.ruleId': string;
-    'match.severity': string;
     'match.message': string;
     'match.blocked': boolean;
     'match.description'?: string;

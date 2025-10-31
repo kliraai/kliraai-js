@@ -157,15 +157,16 @@ describe('YAML Policy System', () => {
       expect(result.matches[0].ruleId).toBe('pii_001');
     });
 
-    it('should provide policy-based guidelines', async () => {
-      const content = 'My SSN is 123-45-6789';
+    it('should NOT provide guidelines when blocked', async () => {
+      const content = 'My SSN is 123-45-6789'; // Triggers PII blocking policy
       const result = await engine.evaluateOutput(content, {
         augmentPrompt: true,
       });
-      
+
+      // When blocked, no guidelines should be generated
       expect(result.blocked).toBe(true);
       expect(result.guidelines).toBeDefined();
-      expect(result.guidelines!.length).toBeGreaterThan(0);
+      expect(result.guidelines!.length).toBe(0);
     });
   });
 });

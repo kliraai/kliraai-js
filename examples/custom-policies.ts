@@ -32,7 +32,7 @@ async function customFastRulesExample() {
     id: 'company-api-keys',
     pattern: /\b(API[_-]?KEY[_-]?\w{8,}|SECRET[_-]?\w{8,})\b/gi,
     action: 'block',
-    severity: 'critical',
+    
     description: 'Company API key or secret detected',
     replacement: '[API_KEY_REDACTED]',
   });
@@ -41,7 +41,7 @@ async function customFastRulesExample() {
     id: 'internal-project-names',
     pattern: /\b(project[_-]?(alpha|beta|gamma|delta|omega))\b/gi,
     action: 'warn',
-    severity: 'medium',
+    
     description: 'Internal project codename detected',
     replacement: '[PROJECT_NAME_REDACTED]',
   });
@@ -50,7 +50,7 @@ async function customFastRulesExample() {
     id: 'competitor-mentions',
     pattern: /\b(competitor[_-]?corp|rival[_-]?tech|enemy[_-]?inc)\b/gi,
     action: 'warn',
-    severity: 'low',
+    
     description: 'Competitor mention detected',
   });
 
@@ -329,7 +329,7 @@ async function conditionalPoliciesExample() {
         id: 'gdpr-compliance',
         pattern: /\b(gdpr|data protection|personal data)\b/gi,
         action: 'warn',
-        severity: 'high',
+        
         description: 'GDPR-related content requires special handling',
       });
     }
@@ -339,7 +339,7 @@ async function conditionalPoliciesExample() {
         id: 'age-restricted-content',
         pattern: /\b(investment|financial advice|legal advice)\b/gi,
         action: 'block',
-        severity: 'high',
+        
         description: 'Age verification required for financial content',
       });
     }

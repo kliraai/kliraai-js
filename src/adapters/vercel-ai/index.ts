@@ -521,7 +521,6 @@ export class VercelAIAdapter implements FrameworkAdapter {
     for (const violation of result.matches) {
       this.metrics?.recordGuardrailViolation(
         violation.ruleId,
-        violation.severity,
         metadata
       );
     }

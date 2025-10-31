@@ -56,7 +56,6 @@ async function testComplianceTracking() {
       console.log('🚨 Policy Violations:');
       result.violations.forEach((violation, index) => {
         console.log(`   ${index + 1}. Rule: ${violation.ruleId}`);
-        console.log(`      - Severity: ${violation.severity}`);
         console.log(`      - Message: ${violation.message}`);
         console.log(`      - Blocked: ${violation.blocked}`);
         console.log(`      - Direction: ${violation.direction || 'N/A'}`);

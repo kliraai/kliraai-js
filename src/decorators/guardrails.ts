@@ -165,7 +165,6 @@ export function guardrails(options: GuardrailOptions = {}) {
                   for (const violation of inputResult.matches) {
                     metrics.recordGuardrailViolation(
                       violation.ruleId,
-                      violation.severity,
                       metadata
                     );
                   }
@@ -218,7 +217,6 @@ export function guardrails(options: GuardrailOptions = {}) {
                   for (const violation of outputResult.matches) {
                     metrics.recordGuardrailViolation(
                       violation.ruleId,
-                      violation.severity,
                       metadata
                     );
                   }

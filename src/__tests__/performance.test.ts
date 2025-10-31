@@ -191,7 +191,7 @@ describe('Performance Tests', () => {
           id: `custom-rule-${i}`,
           pattern: new RegExp(`\\btest${i}\\b`, 'gi'),
           action: 'warn',
-          severity: 'low',
+          
           description: `Test rule ${i}`,
         });
       }

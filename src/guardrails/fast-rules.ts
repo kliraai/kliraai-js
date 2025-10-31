@@ -12,7 +12,6 @@ export interface FastRulePattern {
   id: string;
   pattern: RegExp;
   action: 'block' | 'warn' | 'allow';
-  severity: 'low' | 'medium' | 'high' | 'critical';
   description: string;
 }
 
@@ -173,7 +172,6 @@ export class FastRulesEngine {
           const match: PolicyMatch = {
             ruleId: policy.id,
             message: `${policy.description} (fuzzy match: ${bestMatch.similarity}% similar to "${bestMatch.domain}")`,
-            severity: policy.severity || 'medium',
             blocked: policy.action === 'block',
             matched: bestMatch.matchedText,
             metadata: {
@@ -222,7 +220,6 @@ export class FastRulesEngine {
     const match: PolicyMatch = {
       ruleId: policy.id,
       message: policy.description,
-      severity: policy.severity || 'medium',
       blocked: policy.action === 'block',
       matched: matchResults[0],
     };
@@ -275,7 +272,6 @@ export class FastRulesEngine {
         const match: PolicyMatch = {
           ruleId: rule.id,
           message: rule.description,
-          severity: rule.severity,
           blocked: rule.action === 'block',
           metadata: {
             matches: matchResults.length,
@@ -336,7 +332,6 @@ export class FastRulesEngine {
             id: rule.id,
             pattern: new RegExp(rule.pattern, 'gi'),
             action: rule.action,
-            severity: rule.severity,
             description: rule.description,
           };
           this.addRule(fastRule);

@@ -497,7 +497,6 @@ export class KliraTracing {
       // Set span attributes for each violation
       const violationAttributes: Record<string, any> = {
         [`${violationPrefix}.ruleId`]: violation.ruleId,
-        [`${violationPrefix}.severity`]: violation.severity,
         [`${violationPrefix}.blocked`]: violation.blocked,
         [`${violationPrefix}.message`]: violation.message,
       };
@@ -520,7 +519,6 @@ export class KliraTracing {
       // Create span event for individual violation
       const eventAttributes: MatchSpanEvent['attributes'] = {
         'match.ruleId': violation.ruleId,
-        'match.severity': violation.severity,
         'match.message': violation.message,
         'match.blocked': violation.blocked,
         'match.direction': violation.direction || result.direction || 'unknown',
@@ -537,7 +535,7 @@ export class KliraTracing {
         eventAttributes['match.policyName'] = violation.policyName;
       }
 
-      span.addEvent(`policy.violation.${violation.severity}`, eventAttributes);
+      span.addEvent('policy.violation', eventAttributes);
     });
   }
 

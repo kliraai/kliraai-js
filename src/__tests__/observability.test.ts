@@ -256,14 +256,14 @@ describe.skip('Observability', () => {
 
       kliraMetrics.trackGuardrailViolation({
         ruleId: 'pii-email',
-        severity: 'high',
+        
         action: 'block',
         category: 'privacy',
       });
 
       expect(mockCounter.add).toHaveBeenCalledWith(1, {
         rule_id: 'pii-email',
-        severity: 'high',
+        
         action: 'block',
         category: 'privacy',
       });

@@ -208,7 +208,7 @@ class OpenAILLMService implements LLMService {
       
       return {
         safe: result.safe || false,
-        matches: this.parseViolations(result.violations || []),
+        matches: this.parseViolations(result.violations || [], result.suggested_action || 'block'),
         confidence: result.confidence || 0.5,
         reasoning: result.reasoning || 'No reasoning provided',
         suggestedAction: result.suggested_action || 'block',
@@ -259,7 +259,6 @@ Respond with a JSON object containing:
     {
       "policy_id": "string (policy ID if applicable)",
       "type": "string",
-      "severity": "low|medium|high|critical",
       "description": "string"
     }
   ],
@@ -294,18 +293,22 @@ Be thorough but balanced in your evaluation. Consider context and intent.`;
         ? `\n  Domains: ${policy.domains.join(', ')}`
         : '';
 
-      return `- ${policy.name} (${policy.id}):\n  Description: ${policy.description}\n  Action: ${policy.action}\n  Severity: ${policy.severity || 'medium'}${guidelines}${domains}`;
+      return `- ${policy.name} (${policy.id}):\n  Description: ${policy.description}\n  Action: ${policy.action}\n  ${guidelines}${domains}`;
     }).join('\n\n');
 
     return `ACTIVE POLICIES (${applicablePolicies.length}):\n${policyDescriptions}`;
   }
 
-  private parseViolations(violations: any[]): PolicyMatch[] {
+  private parseViolations(violations: any[], suggestedAction?: string): PolicyMatch[] {
+    // Use suggested_action to determine if violations are blocking
+    // If suggested_action is 'block', all violations block the request
+    // Otherwise, violations are warnings only
+    const isBlocking = suggestedAction === 'block';
+
     return violations.map((v, index) => ({
       ruleId: v.policy_id || `llm-violation-${index}`,
       message: v.description || 'LLM-detected violation',
-      severity: v.severity || 'medium',
-      blocked: v.severity === 'critical' || v.severity === 'high',
+      blocked: isBlocking,
       metadata: {
         source: 'llm-fallback',
         type: v.type,
@@ -389,7 +392,7 @@ class AnthropicLLMService implements LLMService {
       
       return {
         safe: result.safe || false,
-        matches: this.parseViolations(result.violations || []),
+        matches: this.parseViolations(result.violations || [], result.suggested_action || 'block'),
         confidence: result.confidence || 0.5,
         reasoning: result.reasoning || 'No reasoning provided',
         suggestedAction: result.suggested_action || 'block',
@@ -438,7 +441,6 @@ Respond with a JSON object containing:
     {
       "policy_id": "string (policy ID if applicable)",
       "type": "string",
-      "severity": "low|medium|high|critical",
       "description": "string"
     }
   ],
@@ -470,18 +472,19 @@ Be thorough but balanced in your evaluation. Consider context and intent.`;
         ? `\n  Domains: ${policy.domains.join(', ')}`
         : '';
 
-      return `- ${policy.name} (${policy.id}):\n  Description: ${policy.description}\n  Action: ${policy.action}\n  Severity: ${policy.severity || 'medium'}${guidelines}${domains}`;
+      return `- ${policy.name} (${policy.id}):\n  Description: ${policy.description}\n  Action: ${policy.action}\n  ${guidelines}${domains}`;
     }).join('\n\n');
 
     return `ACTIVE POLICIES (${applicablePolicies.length}):\n${policyDescriptions}`;
   }
 
-  private parseViolations(violations: any[]): PolicyMatch[] {
+  private parseViolations(violations: any[], suggestedAction?: string): PolicyMatch[] {
+    const isBlocking = suggestedAction === 'block';
+
     return violations.map((v, index) => ({
       ruleId: v.policy_id || `anthropic-violation-${index}`,
       message: v.description || 'Anthropic-detected violation',
-      severity: v.severity || 'medium',
-      blocked: v.severity === 'critical' || v.severity === 'high',
+      blocked: isBlocking,
       metadata: {
         source: 'anthropic-fallback',
         type: v.type,
@@ -545,7 +548,7 @@ class GoogleLLMService implements LLMService {
       
       return {
         safe: parsed.safe || false,
-        matches: this.parseViolations(parsed.violations || []),
+        matches: this.parseViolations(parsed.violations || [], parsed.suggested_action || 'block'),
         confidence: parsed.confidence || 0.5,
         reasoning: parsed.reasoning || 'No reasoning provided',
         suggestedAction: parsed.suggested_action || 'block',
@@ -594,7 +597,6 @@ Respond with a JSON object containing:
     {
       "policy_id": "string (policy ID if applicable)",
       "type": "string",
-      "severity": "low|medium|high|critical",
       "description": "string"
     }
   ],
@@ -625,18 +627,19 @@ Be thorough but balanced in your evaluation. Consider context and intent.`;
         ? `\n  Domains: ${policy.domains.join(', ')}`
         : '';
 
-      return `- ${policy.name} (${policy.id}):\n  Description: ${policy.description}\n  Action: ${policy.action}\n  Severity: ${policy.severity || 'medium'}${guidelines}${domains}`;
+      return `- ${policy.name} (${policy.id}):\n  Description: ${policy.description}\n  Action: ${policy.action}\n  ${guidelines}${domains}`;
     }).join('\n\n');
 
     return `ACTIVE POLICIES (${applicablePolicies.length}):\n${policyDescriptions}`;
   }
 
-  private parseViolations(violations: any[]): PolicyMatch[] {
+  private parseViolations(violations: any[], suggestedAction?: string): PolicyMatch[] {
+    const isBlocking = suggestedAction === 'block';
+
     return violations.map((v, index) => ({
       ruleId: v.policy_id || `google-violation-${index}`,
       message: v.description || 'Google-detected violation',
-      severity: v.severity || 'medium',
-      blocked: v.severity === 'critical' || v.severity === 'high',
+      blocked: isBlocking,
       metadata: {
         source: 'google-fallback',
         type: v.type,
@@ -707,7 +710,7 @@ class AzureOpenAILLMService implements LLMService {
       
       return {
         safe: result.safe || false,
-        matches: this.parseViolations(result.violations || []),
+        matches: this.parseViolations(result.violations || [], result.suggested_action || 'block'),
         confidence: result.confidence || 0.5,
         reasoning: result.reasoning || 'No reasoning provided',
         suggestedAction: result.suggested_action || 'block',
@@ -756,7 +759,6 @@ Respond with a JSON object containing:
     {
       "policy_id": "string (policy ID if applicable)",
       "type": "string",
-      "severity": "low|medium|high|critical",
       "description": "string"
     }
   ],
@@ -787,18 +789,19 @@ Be thorough but balanced in your evaluation. Consider context and intent.`;
         ? `\n  Domains: ${policy.domains.join(', ')}`
         : '';
 
-      return `- ${policy.name} (${policy.id}):\n  Description: ${policy.description}\n  Action: ${policy.action}\n  Severity: ${policy.severity || 'medium'}${guidelines}${domains}`;
+      return `- ${policy.name} (${policy.id}):\n  Description: ${policy.description}\n  Action: ${policy.action}\n  ${guidelines}${domains}`;
     }).join('\n\n');
 
     return `ACTIVE POLICIES (${applicablePolicies.length}):\n${policyDescriptions}`;
   }
 
-  private parseViolations(violations: any[]): PolicyMatch[] {
+  private parseViolations(violations: any[], suggestedAction?: string): PolicyMatch[] {
+    const isBlocking = suggestedAction === 'block';
+
     return violations.map((v, index) => ({
       ruleId: v.policy_id || `azure-violation-${index}`,
       message: v.description || 'Azure OpenAI-detected violation',
-      severity: v.severity || 'medium',
-      blocked: v.severity === 'critical' || v.severity === 'high',
+      blocked: isBlocking,
       metadata: {
         source: 'azure-openai-fallback',
         type: v.type,

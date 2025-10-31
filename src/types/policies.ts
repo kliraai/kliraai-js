@@ -7,7 +7,7 @@ export interface PolicyDefinition {
   action: 'block' | 'warn' | 'allow';
   guidelines?: string[];
   patterns?: string[];
-  severity?: 'low' | 'medium' | 'high' | 'critical';
+  // severity field removed for Python SDK parity
   metadata?: {
     compliance?: string[];
     last_reviewed?: string;
@@ -30,7 +30,7 @@ export interface CompiledPolicy extends PolicyDefinition {
 export interface PolicyMatch {
   ruleId: string;
   message: string;
-  severity: 'low' | 'medium' | 'high' | 'critical';
+  // severity field removed for Python SDK parity
   blocked: boolean;
   matched?: string;
   position?: {

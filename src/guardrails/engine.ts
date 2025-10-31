@@ -156,7 +156,10 @@ export class GuardrailsEngine {
       }
 
       // Layer 2: LLM Fallback (for complex evaluation)
-      if (this.config.llmFallbackEnabled && !blocked) {
+      // Only run when NO policies matched - acts as catch-all safety layer
+      if (this.config.llmFallbackEnabled && matches.length === 0) {
+        this.logger.debug('No policies matched, running LLM fallback for safety check');
+
         const llmResult = await this.llmFallback.evaluateWithLLM(
           transformedContent,
           matches,
@@ -187,10 +190,22 @@ export class GuardrailsEngine {
       }
 
       // Layer 3: Generate augmentation guidelines
+      // Only generate when not blocked and for non-blocking matches (action: warn/allow)
       let guidelines: string[] = [];
-      if (this.config.augmentationEnabled && (triggeredPolicies.length > 0 || matches.length > 0)) {
-        guidelines = this.augmentation.generateGuidelines(matches, triggeredPolicies);
-        this.logger.debug(`Generated ${guidelines.length} augmentation guidelines from ${triggeredPolicies.length} triggered policies`);
+      if (this.config.augmentationEnabled && !blocked && matches.length > 0) {
+        // Filter to only non-blocking matches
+        const nonBlockingMatches = matches.filter(m => !m.blocked);
+
+        if (nonBlockingMatches.length > 0) {
+          const nonBlockingPolicyIds = nonBlockingMatches.map(m => m.ruleId);
+          guidelines = this.augmentation.generateGuidelines(
+            nonBlockingMatches,
+            nonBlockingPolicyIds
+          );
+          this.logger.debug(
+            `Generated ${guidelines.length} augmentation guidelines from ${nonBlockingMatches.length} non-blocking matches`
+          );
+        }
       }
 
       const duration = Date.now() - startTime;
@@ -228,7 +243,6 @@ export class GuardrailsEngine {
           matches: [{
             ruleId: 'system-error',
             message: 'Guardrails evaluation failed',
-            severity: 'high',
             blocked: true,
             direction: 'input',
             timestamp: Date.now(),
@@ -301,7 +315,10 @@ export class GuardrailsEngine {
       }
 
       // Layer 2: LLM Fallback (for complex evaluation)
-      if (this.config.llmFallbackEnabled && !blocked) {
+      // Only run when NO policies matched - acts as catch-all safety layer
+      if (this.config.llmFallbackEnabled && matches.length === 0) {
+        this.logger.debug('No policies matched, running LLM fallback for safety check');
+
         const llmResult = await this.llmFallback.evaluateWithLLM(
           transformedContent,
           matches,
@@ -332,10 +349,22 @@ export class GuardrailsEngine {
       }
 
       // Layer 3: Generate augmentation guidelines
+      // Only generate when not blocked and for non-blocking matches (action: warn/allow)
       let guidelines: string[] = [];
-      if (this.config.augmentationEnabled && (triggeredPolicies.length > 0 || matches.length > 0)) {
-        guidelines = this.augmentation.generateGuidelines(matches, triggeredPolicies);
-        this.logger.debug(`Generated ${guidelines.length} augmentation guidelines from ${triggeredPolicies.length} triggered policies`);
+      if (this.config.augmentationEnabled && !blocked && matches.length > 0) {
+        // Filter to only non-blocking matches
+        const nonBlockingMatches = matches.filter(m => !m.blocked);
+
+        if (nonBlockingMatches.length > 0) {
+          const nonBlockingPolicyIds = nonBlockingMatches.map(m => m.ruleId);
+          guidelines = this.augmentation.generateGuidelines(
+            nonBlockingMatches,
+            nonBlockingPolicyIds
+          );
+          this.logger.debug(
+            `Generated ${guidelines.length} augmentation guidelines from ${nonBlockingMatches.length} non-blocking matches`
+          );
+        }
       }
 
       const duration = Date.now() - startTime;
@@ -373,7 +402,6 @@ export class GuardrailsEngine {
           matches: [{
             ruleId: 'system-error',
             message: 'Output guardrails evaluation failed',
-            severity: 'high',
             blocked: true,
             direction: 'output',
             timestamp: Date.now(),
@@ -428,17 +456,8 @@ export class GuardrailsEngine {
       return 'No policy matches detected';
     }
 
-    const criticalMatches = matches.filter(v => v.severity === 'critical');
-    const highMatches = matches.filter(v => v.severity === 'high');
-
     if (blocked) {
-      if (criticalMatches.length > 0) {
-        return `Critical policy matches detected: ${criticalMatches.map(v => v.message).join(', ')}`;
-      } else if (highMatches.length > 0) {
-        return `High-severity policy matches detected: ${highMatches.map(v => v.message).join(', ')}`;
-      } else {
-        return `Policy matches detected: ${matches.map(v => v.message).join(', ')}`;
-      }
+      return `Policy matches detected: ${matches.map(v => v.message).join(', ')}`;
     } else {
       return `Policy warnings: ${matches.map(v => v.message).join(', ')}`;
     }

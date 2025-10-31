@@ -144,7 +144,7 @@ export class KliraCallbackHandler {
           // Log violations for monitoring
           if (result.matches.length > 0) {
             result.matches.forEach(violation => {
-              this.metrics?.recordGuardrailViolation(violation.ruleId, violation.severity, {
+              this.metrics?.recordGuardrailViolation(violation.ruleId, {
                 framework: 'langchain',
                 operation: 'input_check',
                 provider: this.options.modelMetadata?.provider || 'unknown',
@@ -263,7 +263,6 @@ export class KliraCallbackHandler {
             result.matches.forEach(violation => {
               this.metrics?.recordGuardrailViolation(
                 violation.ruleId,
-                violation.severity,
                 {
                   framework: 'langchain',
                   operation: 'output_check',
