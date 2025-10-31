@@ -560,13 +560,59 @@ export class KliraTracing {
     }
 
     span.setAttributes(usageAttributes);
-    
+
     // Add event for policy usage
     span.addEvent('policy.usage.evaluation', {
       'usage.evaluatedCount': policyUsage.evaluatedPolicies.length,
       'usage.triggeredCount': policyUsage.triggeredPolicies.length,
       'usage.direction': policyUsage.direction,
       'usage.timestamp': Date.now(),
+    });
+  }
+
+  /**
+   * Record augmentation data (guidelines, policies, matches)
+   */
+  recordAugmentation(
+    guidelines: string[],
+    matches: PolicyMatch[],
+    policyIds: string[]
+  ): void {
+    const span = trace.getActiveSpan();
+    if (!span) {
+      return;
+    }
+
+    // Record augmentation attributes
+    const augmentationAttributes: Partial<SpanAttributes> = {
+      'klira.augmentation.enabled': true,
+      'klira.augmentation.guidelines.count': guidelines.length,
+      'klira.augmentation.policies.count': policyIds.length,
+      'klira.augmentation.matches.count': matches.length,
+    };
+
+    // Add policy IDs that contributed to augmentation
+    if (policyIds.length > 0) {
+      augmentationAttributes['klira.augmentation.policies'] = policyIds;
+    }
+
+    // Add the guidelines themselves (truncate if too many)
+    if (guidelines.length > 0) {
+      guidelines.forEach((guideline, index) => {
+        if (index < 10) { // Limit to first 10 guidelines to avoid overwhelming spans
+          augmentationAttributes[`klira.augmentation.guideline.${index}`] = guideline;
+        }
+      });
+    }
+
+    span.setAttributes(augmentationAttributes);
+
+    // Add event for augmentation generation
+    span.addEvent('guardrails.augmentation.generated', {
+      'augmentation.guidelines.count': guidelines.length,
+      'augmentation.policies.count': policyIds.length,
+      'augmentation.matches.count': matches.length,
+      'augmentation.timestamp': Date.now(),
     });
   }
 

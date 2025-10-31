@@ -14,6 +14,7 @@ import { PolicyAugmentation } from './policy-augmentation.js';
 import { LLMFallbackService, type LLMService } from './llm-fallback.js';
 import { PolicyLoader } from './policy-loader.js';
 import { PolicyDefinition } from '../types/policies.js';
+import type { KliraTracing } from '../observability/tracing.js';
 
 export interface GuardrailsEngineConfig {
   fastRulesEnabled?: boolean;
@@ -24,11 +25,12 @@ export interface GuardrailsEngineConfig {
   policyPath?: string; // Path to YAML policy file
   apiEndpoint?: string; // API endpoint for dynamic policy loading
   apiKey?: string; // API key for policy loading
+  tracing?: KliraTracing; // Tracing instance for observability
 }
 
 export class GuardrailsEngine {
   private static instance: GuardrailsEngine | null = null;
-  
+
   private fastRules: FastRulesEngine;
   private augmentation: PolicyAugmentation;
   private llmFallback: LLMFallbackService;
@@ -37,6 +39,7 @@ export class GuardrailsEngine {
   private logger: Logger;
   private initialized: boolean = false;
   private policies: PolicyDefinition[] = [];
+  private tracing?: KliraTracing;
 
   private constructor(config: GuardrailsEngineConfig = {}) {
     this.config = {
@@ -48,6 +51,7 @@ export class GuardrailsEngine {
     };
 
     this.logger = getLogger();
+    this.tracing = config.tracing;
     this.fastRules = new FastRulesEngine();
     this.augmentation = new PolicyAugmentation();
     this.llmFallback = new LLMFallbackService();
@@ -205,6 +209,11 @@ export class GuardrailsEngine {
           this.logger.debug(
             `Generated ${guidelines.length} augmentation guidelines from ${nonBlockingMatches.length} non-blocking matches`
           );
+
+          // Record augmentation data in traces
+          if (this.tracing && guidelines.length > 0) {
+            this.tracing.recordAugmentation(guidelines, nonBlockingMatches, nonBlockingPolicyIds);
+          }
         }
       }
 
@@ -364,6 +373,11 @@ export class GuardrailsEngine {
           this.logger.debug(
             `Generated ${guidelines.length} augmentation guidelines from ${nonBlockingMatches.length} non-blocking matches`
           );
+
+          // Record augmentation data in traces
+          if (this.tracing && guidelines.length > 0) {
+            this.tracing.recordAugmentation(guidelines, nonBlockingMatches, nonBlockingPolicyIds);
+          }
         }
       }
 

@@ -79,6 +79,9 @@ export class KliraAI {
 
         // Map top-level policiesPath to policyPath if not already set in guardrails config
         policyPath: config.guardrails?.policyPath || config.policiesPath,
+
+        // Pass tracing instance for augmentation observability
+        tracing: KliraAI.tracing || undefined,
       };
 
       // Setup LLM service for fallback if enabled
