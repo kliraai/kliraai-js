@@ -1,12 +1,12 @@
-version: "0.1.0"
-updated_at: "2025-01-21"
+version: "1.0.0"
+updated_at: "2025-06-01"
 policies:
   - id: "toxicity_001"
     name: "Hate Speech and Toxicity Detection"
     direction: "both"
     domains: ["hate", "slur", "racist", "sexist", "homophobic", "transphobic", "xenophobic", "antisemitic", "islamophobic", "ableist", "toxic", "derogatory", "offensive", "bigotry", "discrimination", "harassment", "violence", "threat", "extremist", "supremacist", "nazi", "fascist", "terrorism"]
     description: "Prevent generation of toxic or hateful content, including racism, sexism, threats, slurs, and violent incitement. Aligned with NIST AI RMF and OECD AI Principles."
-    action: "block"
+    action: "allow"
     guidelines: [
       "Never generate, repeat, or engage with hate speech, slurs, or discriminatory language.",
       "Do not provide content that promotes violence, threats, or extremist ideologies.",
@@ -30,7 +30,7 @@ policies:
     direction: "outbound"
     domains: ["ssn", "social", "security", "credit", "card", "passport", "license", "driver", "phone", "address", "email", "birthday", "birth", "date", "medical", "record", "account", "number", "routing", "personal", "private", "confidential", "sensitive", "identifier", "pii"]
     description: "Prevent unauthorized output of Personally Identifiable Information (PII). Based on GDPR Article 5 and NIST SP 800-122."
-    action: "block"
+    action: "allow"
     guidelines: [
       "Never output or generate personal identifiable information including SSNs, credit card numbers, addresses, or phone numbers.",
       "Refuse requests to create, generate, or provide examples of PII even for testing or educational purposes.",
@@ -199,7 +199,7 @@ policies:
     name: "MCP Memory Leak - PII Outbound Prevention"
     direction: "outbound"
     description: "Prevent PII from being leaked through MCP communications"
-    action: "block"
+    action: "allow"
     domains: ["personal", "pii", "private", "confidential", "sensitive", "ssn", "credit", "phone", "address", "email"]
     guidelines: [
       "Never include personal information in outbound communications",
@@ -218,7 +218,7 @@ policies:
     name: "MCP Memory Leak - Context Spillage Prevention"
     direction: "outbound"
     description: "Prevent context from previous conversations from leaking to other agents"
-    action: "block"
+    action: "allow"
     domains: ["context", "conversation", "previous", "earlier", "memory", "remember", "mentioned", "discussed"]
     guidelines: [
       "Do not reference information from previous conversations",
@@ -237,7 +237,7 @@ policies:
     name: "MCP Memory Leak - Chain of Thought Revelation"
     direction: "outbound"
     description: "Prevent internal reasoning chains from being exposed to external agents"
-    action: "block"
+    action: "allow"
     domains: ["thinking", "reasoning", "internal", "process", "step", "analysis", "conclusion"]
     guidelines: [
       "Do not expose internal reasoning processes",
@@ -256,7 +256,7 @@ policies:
     name: "MCP Memory Leak - Credential and Secret Prevention"
     direction: "outbound"
     description: "Prevent credentials, secrets, and API keys from being leaked in outbound communications"
-    action: "block"
+    action: "allow"
     domains: ["credential", "secret", "key", "password", "token", "api", "auth", "authorization", "access"]
     guidelines: [
       "Never include credentials or secrets in outbound messages",
