@@ -15,6 +15,9 @@ export interface KliraConfig {
   debugMode?: boolean;
   environment?: string;
 
+  // Top-level guardrails options (for backward compatibility)
+  llmFallbackEnabled?: boolean;
+
   // Guardrails configuration options
   guardrails?: {
     fastRulesEnabled?: boolean;

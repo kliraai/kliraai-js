@@ -85,10 +85,12 @@ export class KliraAI {
       };
 
       // Setup LLM service for fallback if enabled
+      // Check both top-level and nested llmFallbackEnabled (nested takes precedence)
       // Only auto-enable if OPENAI_API_KEY is set AND user hasn't explicitly disabled it
+      const llmFallbackSetting = config.guardrails?.llmFallbackEnabled ?? config.llmFallbackEnabled;
       const shouldEnableLLMFallback =
-        config.guardrails?.llmFallbackEnabled === true ||
-        (config.guardrails?.llmFallbackEnabled === undefined && process.env.OPENAI_API_KEY);
+        llmFallbackSetting === true ||
+        (llmFallbackSetting === undefined && process.env.OPENAI_API_KEY);
 
       if (shouldEnableLLMFallback) {
         try {

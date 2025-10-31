@@ -35,6 +35,9 @@ const KliraConfigSchema = z.object({
   debugMode: z.boolean().default(false),
   environment: z.string().default('development'),
 
+  // Top-level guardrails options (for backward compatibility)
+  llmFallbackEnabled: z.boolean().optional(),
+
   // Guardrails configuration
   guardrails: z.object({
     fastRulesEnabled: z.boolean().optional(),
