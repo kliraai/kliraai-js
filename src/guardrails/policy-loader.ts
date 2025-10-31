@@ -306,6 +306,7 @@ export class PolicyLoader {
     // 3. Legacy paths (backward compatibility)
     const possiblePaths = [
       // Production paths (npm package after build)
+      path.join(moduleDir, 'guardrails/default_policies.yaml'), // Same directory structure
       path.join(moduleDir, '../guardrails/default_policies.yaml'),
       path.join(moduleDir, '../../guardrails/default_policies.yaml'),
       path.join(moduleDir, 'default_policies.yaml'),

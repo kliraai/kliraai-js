@@ -85,7 +85,7 @@ export class KliraAI {
       // Only auto-enable if OPENAI_API_KEY is set AND user hasn't explicitly disabled it
       const shouldEnableLLMFallback =
         config.guardrails?.llmFallbackEnabled === true ||
-        (config.guardrails?.llmFallbackEnabled !== false && process.env.OPENAI_API_KEY);
+        (config.guardrails?.llmFallbackEnabled === undefined && process.env.OPENAI_API_KEY);
 
       if (shouldEnableLLMFallback) {
         try {
