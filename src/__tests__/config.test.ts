@@ -22,7 +22,7 @@ describe('Configuration Management', () => {
       expect(config.tracingEnabled).toBe(true);
       expect(config.telemetryEnabled).toBe(false);
       expect(config.policyEnforcement).toBe(true);
-      expect(config.policiesPath).toBe('./policies');
+      expect(config.policiesPath).toBeUndefined(); // Changed from './policies' - now optional
       expect(config.verbose).toBe(false);
       expect(config.debugMode).toBe(false);
       expect(config.environment).toBe('development');

@@ -14,6 +14,17 @@ export interface KliraConfig {
   verbose?: boolean;
   debugMode?: boolean;
   environment?: string;
+
+  // Guardrails configuration options
+  guardrails?: {
+    fastRulesEnabled?: boolean;
+    augmentationEnabled?: boolean;
+    llmFallbackEnabled?: boolean;
+    failureMode?: 'open' | 'closed';
+    policyPath?: string; // Alternative to top-level policiesPath
+    apiEndpoint?: string;
+    apiKey?: string;
+  };
 }
 
 // Guardrails types

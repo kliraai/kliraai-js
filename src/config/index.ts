@@ -29,11 +29,22 @@ const KliraConfigSchema = z.object({
   openTelemetryEndpoint: z.string().optional(),
   tracingEnabled: z.boolean().default(true),
   telemetryEnabled: z.boolean().default(false),
-  policiesPath: z.string().default('./policies'),
+  policiesPath: z.string().optional(),
   policyEnforcement: z.boolean().default(true),
   verbose: z.boolean().default(false),
   debugMode: z.boolean().default(false),
   environment: z.string().default('development'),
+
+  // Guardrails configuration
+  guardrails: z.object({
+    fastRulesEnabled: z.boolean().optional(),
+    augmentationEnabled: z.boolean().optional(),
+    llmFallbackEnabled: z.boolean().optional(),
+    failureMode: z.enum(['open', 'closed']).optional(),
+    policyPath: z.string().optional(),
+    apiEndpoint: z.string().optional(),
+    apiKey: z.string().optional(),
+  }).optional(),
 });
 
 // Global configuration instance

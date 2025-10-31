@@ -66,19 +66,31 @@ export class KliraAI {
         KliraAI.logger.debug('Observability initialized');
       }
 
-      // Initialize guardrails engine
+      // Initialize guardrails engine with config options
       const guardrailsConfig: GuardrailsEngineConfig = {
+        // Default values
         fastRulesEnabled: true,
         augmentationEnabled: true,
-        llmFallbackEnabled: false, // Can be enabled by setting LLM service
+        llmFallbackEnabled: false,
         failureMode: 'open',
+
+        // Override with user-provided guardrails config
+        ...config.guardrails,
+
+        // Map top-level policiesPath to policyPath if not already set in guardrails config
+        policyPath: config.guardrails?.policyPath || config.policiesPath,
       };
 
-      // Setup LLM service for fallback if OpenAI API key is available
-      if (process.env.OPENAI_API_KEY) {
+      // Setup LLM service for fallback if enabled
+      // Only auto-enable if OPENAI_API_KEY is set AND user hasn't explicitly disabled it
+      const shouldEnableLLMFallback =
+        config.guardrails?.llmFallbackEnabled === true ||
+        (config.guardrails?.llmFallbackEnabled !== false && process.env.OPENAI_API_KEY);
+
+      if (shouldEnableLLMFallback) {
         try {
           const llmService = LLMFallbackService.createOpenAIService({
-            apiKey: process.env.OPENAI_API_KEY,
+            apiKey: process.env.OPENAI_API_KEY || '',
           });
           guardrailsConfig.llmService = llmService;
           guardrailsConfig.llmFallbackEnabled = true;
