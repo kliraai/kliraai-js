@@ -40,6 +40,7 @@ export class GuardrailsEngine {
   private initialized: boolean = false;
   private policies: PolicyDefinition[] = [];
   private tracing?: KliraTracing;
+  private currentConversationId: string | null = null;
 
   private constructor(config: GuardrailsEngineConfig = {}) {
     this.config = {
@@ -63,6 +64,19 @@ export class GuardrailsEngine {
     if (config.llmService) {
       this.llmFallback.setLLMService(config.llmService);
       this.llmFallback.setEnabled(this.config.llmFallbackEnabled || false);
+    }
+  }
+
+  /**
+   * Set conversation ID for tracing context
+   * If no conversation ID is provided, generates a timestamp-based default
+   */
+  setConversationId(conversationId?: string): void {
+    // Generate conversation ID if not provided
+    this.currentConversationId = conversationId || `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    if (this.tracing) {
+      this.tracing.setConversationContext(this.currentConversationId);
     }
   }
 
@@ -123,41 +137,60 @@ export class GuardrailsEngine {
       await this.initialize();
     }
 
+    // Ensure conversation ID is set (will auto-generate if not already set)
+    if (!this.currentConversationId) {
+      this.setConversationId();
+    }
+
     const startTime = Date.now();
     const evaluatedPolicies: string[] = [];
     const triggeredPolicies: string[] = [];
 
-    try {
-      const matches: PolicyMatch[] = [];
-      let transformedContent = content;
-      let blocked = false;
+    // Wrap entire evaluation in compliance audit span if tracing enabled
+    const performEvaluation = async (): Promise<GuardrailResult> => {
+      try {
+        const matches: PolicyMatch[] = [];
+        let transformedContent = content;
+        let blocked = false;
 
-      // Layer 1: Fast Rules (pattern matching with direction awareness)
-      if (this.config.fastRulesEnabled) {
-        const fastResult = this.fastRules.isYAMLInitialized()
-          ? this.fastRules.evaluateWithDirection(content, 'inbound')
-          : this.fastRules.evaluate(content);
+        // Layer 1: Fast Rules (pattern matching with direction awareness)
+        if (this.config.fastRulesEnabled) {
+          // Wrap fast rules evaluation in its own span
+          const evaluateFastRules = () => {
+            return this.fastRules.isYAMLInitialized()
+              ? this.fastRules.evaluateWithDirection(content, 'inbound')
+              : this.fastRules.evaluate(content);
+          };
 
-        // Track which policies were evaluated
-        const fastPolicies = this.fastRules.getPolicyIds();
-        evaluatedPolicies.push(...fastPolicies);
+          const fastResult = this.tracing
+            ? this.tracing.traceFastRules(
+                evaluateFastRules,
+                'inbound',
+                this.fastRules.getPolicyIds().length,
+                this.currentConversationId || undefined
+              )
+            : evaluateFastRules();
 
-        // Track triggered policies
-        const matchedPolicies = fastResult.matches.map(v => v.ruleId);
-        triggeredPolicies.push(...matchedPolicies);
+          // Track which policies were evaluated
+          const fastPolicies = this.fastRules.getPolicyIds();
+          evaluatedPolicies.push(...fastPolicies);
 
-        matches.push(...fastResult.matches.map(v => ({
-          ...v,
-          direction: 'input',
-          timestamp: Date.now(),
-        })));
+          // Track triggered policies
+          const matchedPolicies = fastResult.matches.map(v => v.ruleId);
+          triggeredPolicies.push(...matchedPolicies);
 
-        // transformedContent always equals original content in new model
-        transformedContent = content;
-        blocked = blocked || fastResult.blocked;
+          matches.push(...fastResult.matches.map(v => ({
+            ...v,
+            direction: 'input',
+            timestamp: Date.now(),
+          })));
 
-        this.logger.debug(`Fast rules found ${fastResult.matches.length} matches`);
-      }
+          // transformedContent always equals original content in new model
+          transformedContent = content;
+          blocked = blocked || fastResult.blocked;
+
+          this.logger.debug(`Fast rules found ${fastResult.matches.length} matches`);
+        }
 
       // Layer 2: LLM Fallback (for complex evaluation)
       // Only run when NO policies matched - acts as catch-all safety layer
@@ -217,62 +250,79 @@ export class GuardrailsEngine {
         }
       }
 
-      const duration = Date.now() - startTime;
-      const uniqueTriggeredPolicies = [...new Set(triggeredPolicies)];
-      const uniqueEvaluatedPolicies = [...new Set(evaluatedPolicies)];
+        const duration = Date.now() - startTime;
+        const uniqueTriggeredPolicies = [...new Set(triggeredPolicies)];
+        const uniqueEvaluatedPolicies = [...new Set(evaluatedPolicies)];
 
-      return {
-        allowed: !blocked,
-        blocked,
-        matches,
-        transformedInput: transformedContent !== content ? transformedContent : undefined,
-        guidelines,
-        reason: this.createReasonMessage(matches, blocked),
-        evaluationDuration: duration,
-        triggeredPolicies: uniqueTriggeredPolicies,
-        direction: 'input',
-        policyUsage: {
-          evaluatedPolicies: uniqueEvaluatedPolicies,
+        return {
+          allowed: !blocked,
+          blocked,
+          matches,
+          transformedInput: transformedContent !== content ? transformedContent : undefined,
+          guidelines,
+          reason: this.createReasonMessage(matches, blocked),
+          evaluationDuration: duration,
           triggeredPolicies: uniqueTriggeredPolicies,
-          evaluationCount: uniqueEvaluatedPolicies.length,
           direction: 'input',
-          duration,
-        },
-      };
-
-    } catch (error) {
-      const duration = Date.now() - startTime;
-      this.logger.error(`Guardrails evaluation failed: ${error}`);
-      
-      // Handle failure based on failure mode
-      if (this.config.failureMode === 'closed') {
-        return {
-          allowed: false,
-          blocked: true,
-          matches: [{
-            ruleId: 'system-error',
-            message: 'Guardrails evaluation failed',
-            blocked: true,
+          policyUsage: {
+            evaluatedPolicies: uniqueEvaluatedPolicies,
+            triggeredPolicies: uniqueTriggeredPolicies,
+            evaluationCount: uniqueEvaluatedPolicies.length,
             direction: 'input',
-            timestamp: Date.now(),
-            metadata: { error: String(error) },
-          }],
-          reason: 'System error - blocking for safety',
-          evaluationDuration: duration,
-          triggeredPolicies: ['system-error'],
-          direction: 'input',
+            duration,
+          },
         };
-      } else {
-        return {
-          allowed: true,
-          blocked: false,
-          matches: [],
-          reason: 'System error - allowing with warning',
-          evaluationDuration: duration,
-          triggeredPolicies: [],
-          direction: 'input',
-        };
+
+      } catch (error) {
+        const duration = Date.now() - startTime;
+        this.logger.error(`Guardrails evaluation failed: ${error}`);
+
+        // Handle failure based on failure mode
+        if (this.config.failureMode === 'closed') {
+          return {
+            allowed: false,
+            blocked: true,
+            matches: [{
+              ruleId: 'system-error',
+              message: 'Guardrails evaluation failed',
+              blocked: true,
+              direction: 'input',
+              timestamp: Date.now(),
+              metadata: { error: String(error) },
+            }],
+            reason: 'System error - blocking for safety',
+            evaluationDuration: duration,
+            triggeredPolicies: ['system-error'],
+            direction: 'input',
+          };
+        } else {
+          return {
+            allowed: true,
+            blocked: false,
+            matches: [],
+            reason: 'System error - allowing with warning',
+            evaluationDuration: duration,
+            triggeredPolicies: [],
+            direction: 'input',
+          };
+        }
       }
+    };
+
+    // Execute with tracing if available
+    if (this.tracing) {
+      // First get the result so we can pass it to traceCheckInput
+      const result = await performEvaluation();
+
+      // Now wrap in check_input span with result attributes
+      return this.tracing.traceCheckInput(
+        async () => result,
+        result,
+        content.length,
+        this.currentConversationId || undefined
+      );
+    } else {
+      return performEvaluation();
     }
   }
 
@@ -287,41 +337,60 @@ export class GuardrailsEngine {
       await this.initialize();
     }
 
+    // Ensure conversation ID is set (will auto-generate if not already set)
+    if (!this.currentConversationId) {
+      this.setConversationId();
+    }
+
     const startTime = Date.now();
     const evaluatedPolicies: string[] = [];
     const triggeredPolicies: string[] = [];
 
-    try {
-      const matches: PolicyMatch[] = [];
-      let transformedContent = content;
-      let blocked = false;
+    // Wrap entire evaluation in compliance audit span if tracing enabled
+    const performEvaluation = async (): Promise<GuardrailResult> => {
+      try {
+        const matches: PolicyMatch[] = [];
+        let transformedContent = content;
+        let blocked = false;
 
-      // Layer 1: Fast Rules (pattern matching for outbound)
-      if (this.config.fastRulesEnabled) {
-        const fastResult = this.fastRules.isYAMLInitialized()
-          ? this.fastRules.evaluateWithDirection(content, 'outbound')
-          : this.fastRules.evaluate(content);
+        // Layer 1: Fast Rules (pattern matching for outbound)
+        if (this.config.fastRulesEnabled) {
+          // Wrap fast rules evaluation in its own span
+          const evaluateFastRules = () => {
+            return this.fastRules.isYAMLInitialized()
+              ? this.fastRules.evaluateWithDirection(content, 'outbound')
+              : this.fastRules.evaluate(content);
+          };
 
-        // Track which policies were evaluated
-        const fastPolicies = this.fastRules.getPolicyIds();
-        evaluatedPolicies.push(...fastPolicies);
+          const fastResult = this.tracing
+            ? this.tracing.traceFastRules(
+                evaluateFastRules,
+                'outbound',
+                this.fastRules.getPolicyIds().length,
+                this.currentConversationId || undefined
+              )
+            : evaluateFastRules();
 
-        // Track triggered policies
-        const matchedPolicies = fastResult.matches.map(v => v.ruleId);
-        triggeredPolicies.push(...matchedPolicies);
+          // Track which policies were evaluated
+          const fastPolicies = this.fastRules.getPolicyIds();
+          evaluatedPolicies.push(...fastPolicies);
 
-        matches.push(...fastResult.matches.map(v => ({
-          ...v,
-          direction: 'output',
-          timestamp: Date.now(),
-        })));
+          // Track triggered policies
+          const matchedPolicies = fastResult.matches.map(v => v.ruleId);
+          triggeredPolicies.push(...matchedPolicies);
 
-        // transformedContent always equals original content in new model
-        transformedContent = content;
-        blocked = blocked || fastResult.blocked;
+          matches.push(...fastResult.matches.map(v => ({
+            ...v,
+            direction: 'output',
+            timestamp: Date.now(),
+          })));
 
-        this.logger.debug(`Fast rules (output) found ${fastResult.matches.length} matches`);
-      }
+          // transformedContent always equals original content in new model
+          transformedContent = content;
+          blocked = blocked || fastResult.blocked;
+
+          this.logger.debug(`Fast rules (output) found ${fastResult.matches.length} matches`);
+        }
 
       // Layer 2: LLM Fallback (for complex evaluation)
       // Only run when NO policies matched - acts as catch-all safety layer
@@ -381,62 +450,79 @@ export class GuardrailsEngine {
         }
       }
 
-      const duration = Date.now() - startTime;
-      const uniqueTriggeredPolicies = [...new Set(triggeredPolicies)];
-      const uniqueEvaluatedPolicies = [...new Set(evaluatedPolicies)];
+        const duration = Date.now() - startTime;
+        const uniqueTriggeredPolicies = [...new Set(triggeredPolicies)];
+        const uniqueEvaluatedPolicies = [...new Set(evaluatedPolicies)];
 
-      return {
-        allowed: !blocked,
-        blocked,
-        matches,
-        transformedInput: transformedContent !== content ? transformedContent : undefined,
-        guidelines,
-        reason: this.createReasonMessage(matches, blocked),
-        evaluationDuration: duration,
-        triggeredPolicies: uniqueTriggeredPolicies,
-        direction: 'output',
-        policyUsage: {
-          evaluatedPolicies: uniqueEvaluatedPolicies,
+        return {
+          allowed: !blocked,
+          blocked,
+          matches,
+          transformedInput: transformedContent !== content ? transformedContent : undefined,
+          guidelines,
+          reason: this.createReasonMessage(matches, blocked),
+          evaluationDuration: duration,
           triggeredPolicies: uniqueTriggeredPolicies,
-          evaluationCount: uniqueEvaluatedPolicies.length,
           direction: 'output',
-          duration,
-        },
-      };
-
-    } catch (error) {
-      const duration = Date.now() - startTime;
-      this.logger.error(`Output guardrails evaluation failed: ${error}`);
-
-      // Handle failure based on failure mode
-      if (this.config.failureMode === 'closed') {
-        return {
-          allowed: false,
-          blocked: true,
-          matches: [{
-            ruleId: 'system-error',
-            message: 'Output guardrails evaluation failed',
-            blocked: true,
+          policyUsage: {
+            evaluatedPolicies: uniqueEvaluatedPolicies,
+            triggeredPolicies: uniqueTriggeredPolicies,
+            evaluationCount: uniqueEvaluatedPolicies.length,
             direction: 'output',
-            timestamp: Date.now(),
-            metadata: { error: String(error) },
-          }],
-          reason: 'System error - blocking for safety',
-          evaluationDuration: duration,
-          triggeredPolicies: ['system-error'],
-          direction: 'output',
+            duration,
+          },
         };
-      } else {
-        return {
-          allowed: true,
-          blocked: false,
-          matches: [],
-          reason: 'System error - allowing with warning',
-          evaluationDuration: duration,
-          triggeredPolicies: [],
-          direction: 'output',
-        };
+
+      } catch (error) {
+        const duration = Date.now() - startTime;
+        this.logger.error(`Output guardrails evaluation failed: ${error}`);
+
+        // Handle failure based on failure mode
+        if (this.config.failureMode === 'closed') {
+          return {
+            allowed: false,
+            blocked: true,
+            matches: [{
+              ruleId: 'system-error',
+              message: 'Output guardrails evaluation failed',
+              blocked: true,
+              direction: 'output',
+              timestamp: Date.now(),
+              metadata: { error: String(error) },
+            }],
+            reason: 'System error - blocking for safety',
+            evaluationDuration: duration,
+            triggeredPolicies: ['system-error'],
+            direction: 'output',
+          };
+        } else {
+          return {
+            allowed: true,
+            blocked: false,
+            matches: [],
+            reason: 'System error - allowing with warning',
+            evaluationDuration: duration,
+            triggeredPolicies: [],
+            direction: 'output',
+          };
+        }
       }
+    };
+
+    // Execute with tracing if available
+    if (this.tracing) {
+      // First get the result so we can pass it to traceCheckOutput
+      const result = await performEvaluation();
+
+      // Now wrap in check_output span with result attributes
+      return this.tracing.traceCheckOutput(
+        async () => result,
+        result,
+        content.length,
+        this.currentConversationId || undefined
+      );
+    } else {
+      return performEvaluation();
     }
   }
 

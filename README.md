@@ -178,6 +178,13 @@ Klira AI provides comprehensive observability out of the box:
 // - Guardrail evaluations (input/output checks)
 // - Framework-specific operations
 
+// Set conversation ID for trace grouping (recommended)
+const guardrails = KliraAI.getGuardrails();
+guardrails.setConversationId('conv-abc123');
+
+// If no conversation ID is provided, one will be auto-generated
+// using timestamp: conv_1730405000000_abc123xyz
+
 // Add custom metadata
 KliraAI.setTraceMetadata({
   userId: 'user-123',
