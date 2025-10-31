@@ -153,7 +153,7 @@ export interface SpanAttributes {
   'klira.cost.output'?: number;
   'klira.guardrails.enabled'?: boolean;
   'klira.guardrails.violations'?: number;
-  
+
   // Hierarchy context attributes (matching Python SDK)
   'klira.organization_id'?: string;
   'klira.project_id'?: string;
@@ -164,28 +164,46 @@ export interface SpanAttributes {
   'klira.user_id'?: string;
   'klira.session_id'?: string;
   'klira.request_id'?: string;
-  
+
+  // Traceloop association (CRITICAL for conversation grouping)
+  'traceloop.association.properties.conversation_id'?: string;
+
+  // Compliance attributes
+  'compliance.direction'?: 'inbound' | 'outbound';
+  'compliance.decision.allowed'?: boolean;
+  'compliance.decision.action'?: 'allow' | 'block';
+  'compliance.decision.confidence'?: number;
+  'compliance.input_length'?: number;
+  'compliance.evaluation.method'?: string;
+  'compliance.decision.layer'?: string;
+
+  // Klira component attributes
+  'klira.component'?: string;
+  'klira.operation'?: string;
+  'klira.policies_count'?: number;
+  'klira.direction'?: string;
+
   // Policy violation attributes (for compliance reporting)
   'klira.policy.violation.ruleId'?: string;
   'klira.policy.violation.description'?: string;
   'klira.policy.violation.blocked'?: boolean;
   'klira.policy.violation.category'?: string;
   'klira.policy.violation.direction'?: string;
-  
+
   // Policy usage tracking
   'klira.policy.usage.triggeredPolicies'?: string[];
   'klira.policy.usage.evaluationCount'?: number;
   'klira.policy.usage.direction'?: string;
-  
+
   // Agent and compliance context
   'klira.agent.name'?: string;
   'klira.agent.version'?: string;
   'klira.policy.enforcement.mode'?: string;
   'klira.guardrails.evaluation.duration_ms'?: number;
-  
+
   // Custom compliance tags
   'klira.compliance.tags'?: Record<string, string>;
-  
+
   // Additional attributes
   [key: string]: any;
 }

@@ -32,12 +32,31 @@ export interface TracingConfig {
 export class KliraTracing {
   private static instance: KliraTracing | null = null;
   private sdk: NodeSDK | null = null;
-  private tracer = trace.getTracer('klira-ai-sdk');
+  private tracers: Map<string, any> = new Map();
   private initialized: boolean = false;
   private config: TracingConfig;
 
   private constructor(config: TracingConfig) {
     this.config = config;
+    // Initialize component-specific tracers
+    this.initializeTracers();
+  }
+
+  /**
+   * Initialize component-specific tracers
+   */
+  private initializeTracers(): void {
+    this.tracers.set('compliance', trace.getTracer('klira.guardrails.compliance'));
+    this.tracers.set('fast_rules', trace.getTracer('klira.guardrails.fast_rules'));
+    this.tracers.set('llm_fallback', trace.getTracer('klira.guardrails.llm_fallback'));
+    this.tracers.set('default', trace.getTracer('klira-ai-sdk'));
+  }
+
+  /**
+   * Get tracer by component name
+   */
+  private getTracer(component: 'compliance' | 'fast_rules' | 'llm_fallback' | 'default' = 'default'): any {
+    return this.tracers.get(component) || this.tracers.get('default');
   }
 
   /**
@@ -79,41 +98,37 @@ export class KliraTracing {
       return;
     }
 
-    try {
-      // Create resource
-      const resource = resourceFromAttributes({
-        [ATTR_SERVICE_NAME]: this.config.serviceName,
-        [ATTR_SERVICE_VERSION]: this.config.serviceVersion,
-        'klira.sdk.name': 'klira',
-        'klira.sdk.version': '0.1.0',
-      });
+    // Create resource
+    const resource = resourceFromAttributes({
+      [ATTR_SERVICE_NAME]: this.config.serviceName,
+      [ATTR_SERVICE_VERSION]: this.config.serviceVersion,
+      'klira.sdk.name': 'klira',
+      'klira.sdk.version': '0.1.0',
+    });
 
-      // Create exporter
-      const exporter = new OTLPTraceExporter({
-        url: this.config.endpoint || 'https://api.getklira.com/v1/traces',
-        headers: this.config.headers || {},
-      });
+    // Create exporter
+    const exporter = new OTLPTraceExporter({
+      url: this.config.endpoint || 'https://api.getklira.com/v1/traces',
+      headers: this.config.headers || {},
+    });
 
-      // Create SDK
-      this.sdk = new NodeSDK({
-        resource,
-        traceExporter: exporter,
-        instrumentations: this.config.autoInstrumentation 
-          ? [getNodeAutoInstrumentations({
-              // Disable some instrumentations that might conflict
-              '@opentelemetry/instrumentation-fs': {
-                enabled: false,
-              },
-            })]
-          : [],
-      });
+    // Create SDK
+    this.sdk = new NodeSDK({
+      resource,
+      traceExporter: exporter,
+      instrumentations: this.config.autoInstrumentation
+        ? [getNodeAutoInstrumentations({
+            // Disable some instrumentations that might conflict
+            '@opentelemetry/instrumentation-fs': {
+              enabled: false,
+            },
+          })]
+        : [],
+    });
 
-      // Start the SDK
-      this.sdk.start();
-      this.initialized = true;
-    } catch (error) {
-      throw error;
-    }
+    // Start the SDK
+    this.sdk.start();
+    this.initialized = true;
   }
 
   /**
@@ -134,7 +149,8 @@ export class KliraTracing {
       delete flattenedAttributes['klira.compliance.tags'];
     }
 
-    const span = this.tracer.startSpan(name, {
+    const tracer = this.getTracer('default');
+    const span = tracer.startSpan(name, {
       kind,
       attributes: {
         'klira.instrumented': true,
@@ -276,15 +292,219 @@ export class KliraTracing {
         return result;
       } catch (error) {
         span.recordException(error as Error);
-        span.setStatus({ 
-          code: SpanStatusCode.ERROR, 
-          message: (error as Error).message 
+        span.setStatus({
+          code: SpanStatusCode.ERROR,
+          message: (error as Error).message
         });
         throw error;
       } finally {
         span.end();
       }
     });
+  }
+
+  /**
+   * Create compliance audit span (parent for guardrails evaluation)
+   */
+  traceComplianceAudit<T>(
+    fn: () => Promise<T>,
+    conversationId?: string
+  ): Promise<T> {
+    const tracer = this.getTracer('compliance');
+    const span = tracer.startSpan('klira.compliance.audit', {
+      attributes: {
+        'klira.instrumented': true,
+      },
+    });
+
+    // Set conversation ID on parent span
+    if (conversationId) {
+      span.setAttribute('traceloop.association.properties.conversation_id', conversationId);
+      span.setAttribute('klira.conversation_id', conversationId);
+    }
+
+    return context.with(trace.setSpan(context.active(), span), async () => {
+      try {
+        const result = await fn();
+        span.setStatus({ code: SpanStatusCode.OK });
+        return result;
+      } catch (error) {
+        span.recordException(error as Error);
+        span.setStatus({
+          code: SpanStatusCode.ERROR,
+          message: (error as Error).message
+        });
+        throw error;
+      } finally {
+        span.end();
+      }
+    });
+  }
+
+  /**
+   * Create check_input span with compliance attributes
+   */
+  traceCheckInput<T>(
+    fn: () => Promise<T>,
+    result: GuardrailResult,
+    inputLength: number,
+    conversationId?: string
+  ): Promise<T> {
+    const tracer = this.getTracer('compliance');
+    const span = tracer.startSpan('klira.guardrails.check_input', {
+      attributes: {
+        'klira.instrumented': true,
+        'compliance.direction': 'inbound',
+        'compliance.decision.allowed': result.allowed,
+        'compliance.decision.action': result.blocked ? 'block' : 'allow',
+        'compliance.decision.confidence': 1.0,
+        'compliance.input_length': inputLength,
+        'compliance.evaluation.method': this.determineEvaluationMethod(result),
+        'compliance.decision.layer': this.determineDecisionLayer(result),
+      },
+    });
+
+    // Set conversation ID
+    if (conversationId) {
+      span.setAttribute('traceloop.association.properties.conversation_id', conversationId);
+      span.setAttribute('klira.conversation_id', conversationId);
+    }
+
+    return context.with(trace.setSpan(context.active(), span), async () => {
+      try {
+        const result = await fn();
+        span.setStatus({ code: SpanStatusCode.OK });
+        return result;
+      } catch (error) {
+        span.recordException(error as Error);
+        span.setStatus({
+          code: SpanStatusCode.ERROR,
+          message: (error as Error).message
+        });
+        throw error;
+      } finally {
+        span.end();
+      }
+    });
+  }
+
+  /**
+   * Create check_output span with compliance attributes
+   */
+  traceCheckOutput<T>(
+    fn: () => Promise<T>,
+    result: GuardrailResult,
+    outputLength: number,
+    conversationId?: string
+  ): Promise<T> {
+    const tracer = this.getTracer('compliance');
+    const span = tracer.startSpan('klira.guardrails.check_output', {
+      attributes: {
+        'klira.instrumented': true,
+        'compliance.direction': 'outbound',
+        'compliance.decision.allowed': result.allowed,
+        'compliance.decision.action': result.blocked ? 'block' : 'allow',
+        'compliance.decision.confidence': 1.0,
+        'compliance.input_length': outputLength,
+        'compliance.evaluation.method': this.determineEvaluationMethod(result),
+        'compliance.decision.layer': this.determineDecisionLayer(result),
+      },
+    });
+
+    // Set conversation ID
+    if (conversationId) {
+      span.setAttribute('traceloop.association.properties.conversation_id', conversationId);
+      span.setAttribute('klira.conversation_id', conversationId);
+    }
+
+    return context.with(trace.setSpan(context.active(), span), async () => {
+      try {
+        const result = await fn();
+        span.setStatus({ code: SpanStatusCode.OK });
+        return result;
+      } catch (error) {
+        span.recordException(error as Error);
+        span.setStatus({
+          code: SpanStatusCode.ERROR,
+          message: (error as Error).message
+        });
+        throw error;
+      } finally {
+        span.end();
+      }
+    });
+  }
+
+  /**
+   * Create fast_rules.evaluate span
+   */
+  traceFastRules<T>(
+    fn: () => T,
+    direction: 'inbound' | 'outbound',
+    policiesCount: number,
+    conversationId?: string
+  ): T {
+    const tracer = this.getTracer('fast_rules');
+    const span = tracer.startSpan('klira.guardrails.fast_rules.evaluate', {
+      attributes: {
+        'klira.instrumented': true,
+        'klira.component': 'guardrails.fast_rules',
+        'klira.operation': 'evaluate',
+        'klira.policies_count': policiesCount,
+        'klira.direction': direction,
+      },
+    });
+
+    // Set conversation ID
+    if (conversationId) {
+      span.setAttribute('traceloop.association.properties.conversation_id', conversationId);
+      span.setAttribute('klira.conversation_id', conversationId);
+    }
+
+    return context.with(trace.setSpan(context.active(), span), () => {
+      try {
+        const result = fn();
+        span.setStatus({ code: SpanStatusCode.OK });
+        return result;
+      } catch (error) {
+        span.recordException(error as Error);
+        span.setStatus({
+          code: SpanStatusCode.ERROR,
+          message: (error as Error).message
+        });
+        throw error;
+      } finally {
+        span.end();
+      }
+    });
+  }
+
+  /**
+   * Determine evaluation method from result
+   */
+  private determineEvaluationMethod(result: GuardrailResult): string {
+    if (result.matches && result.matches.length > 0) {
+      // Check if any match came from LLM (would have specific metadata)
+      const hasLLMMatch = result.matches.some(m =>
+        m.ruleId.includes('llm-') || m.metadata?.source === 'llm'
+      );
+      return hasLLMMatch ? 'llm_fallback' : 'fast_rules';
+    }
+    return 'default';
+  }
+
+  /**
+   * Determine decision layer from result
+   */
+  private determineDecisionLayer(result: GuardrailResult): string {
+    if (result.matches && result.matches.length > 0) {
+      const hasLLMMatch = result.matches.some(m =>
+        m.ruleId.includes('llm-') || m.metadata?.source === 'llm'
+      );
+      return hasLLMMatch ? 'llm_fallback' : 'fast_rules';
+    }
+    // No matches - check if blocked or allowed
+    return result.blocked ? 'default_block' : 'default_allow';
   }
 
   /**
@@ -352,8 +572,9 @@ export class KliraTracing {
   setConversationContext(conversationId: string, userId?: string): void {
     const contextAttributes: Partial<SpanAttributes> = {
       'klira.conversation_id': conversationId,
+      'traceloop.association.properties.conversation_id': conversationId,
     };
-    
+
     if (userId) {
       contextAttributes['klira.user_id'] = userId;
     }
@@ -366,7 +587,7 @@ export class KliraTracing {
    */
   setHierarchyContext(context: HierarchyContext): void {
     const contextAttributes: Partial<SpanAttributes> = {};
-    
+
     if (context.organizationId) {
       contextAttributes['klira.organization_id'] = context.organizationId;
     }
@@ -384,6 +605,7 @@ export class KliraTracing {
     }
     if (context.conversationId) {
       contextAttributes['klira.conversation_id'] = context.conversationId;
+      contextAttributes['traceloop.association.properties.conversation_id'] = context.conversationId;
     }
     if (context.userId) {
       contextAttributes['klira.user_id'] = context.userId;
