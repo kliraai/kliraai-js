@@ -1,41 +1,82 @@
 # Klira AI JavaScript/TypeScript SDK
 
-[![npm version](https://badge.fury.io/js/@kliraai%2Fsdk.svg)](https://badge.fury.io/js/@kliraai%2Fsdk)
-[![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg)](https://www.typescriptlang.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
 The official JavaScript/TypeScript SDK for [Klira AI](https://getklira.com) - providing comprehensive **guardrails**, **observability**, and **compliance** for your GenAI applications.
 
-## 🚀 Quick Start
+## Requirements
 
-### Installation
+- **Node.js**: 18.0.0 or higher
+- **Package Manager**: npm, yarn, or pnpm
+- **TypeScript**: 5.5.0+ (recommended)
+
+## 🚀 Installation
+
+### From npm (Recommended)
 
 ```bash
 npm install klira
-
-# For Vercel AI SDK integration (recommended)
-npm install klira ai @ai-sdk/openai
-
-# For LangChain.js integration
-npm install klira @langchain/core @langchain/openai
 ```
 
-### Basic Usage
+### From GitHub
+
+Install directly from the GitHub repository:
+
+```bash
+npm install github:kliraai/kliraai-js
+```
+
+**Note**: When installing from GitHub, the package will be built automatically using the `prepare` script. Ensure you have Node.js 18.0.0+ installed.
+
+### What's Included
+
+The SDK includes everything you need:
+- Core guardrails engine with PII detection, content safety, and prompt injection protection
+- OpenTelemetry integration for distributed tracing
+- Decorator pattern support (works standalone, no framework required)
+- Adapters for Vercel AI SDK, LangChain.js, and OpenAI SDK
+- Configuration management with environment variable support
+- Custom policy framework
+
+### Framework Dependencies (Optional)
+
+The SDK works standalone with the decorator pattern. Framework integrations are optional peer dependencies:
+
+```bash
+# For Vercel AI SDK integration
+npm install ai @ai-sdk/openai
+
+# For LangChain.js integration
+npm install @langchain/core @langchain/openai
+
+# For OpenAI SDK integration
+npm install openai
+```
+
+**Note**: You only need to install framework dependencies if you're using that specific integration. The decorator pattern and core SDK functionality work without any additional dependencies.
+
+## 🚀 Quick Start
+
+### 1. Initialize the SDK
 
 ```typescript
 import { KliraAI } from 'klira';
-import { createKliraVercelAI } from 'klira/vercel-ai';
-import { generateText } from 'ai';
-import { openai } from '@ai-sdk/openai';
 
-// 1. Initialize Klira AI
 await KliraAI.init({
   apiKey: process.env.KLIRA_API_KEY, // Get your key at https://hub.getklira.com
   appName: 'my-ai-app',
   tracingEnabled: true,
+  policyEnforcement: true,
 });
+```
 
-// 2. Wrap your AI SDK with Klira guardrails
+### 2. Choose Your Integration Pattern
+
+#### Option A: Vercel AI SDK (Recommended)
+
+```typescript
+import { createKliraVercelAI } from 'klira/vercel-ai';
+import { generateText } from 'ai';
+import { openai } from '@ai-sdk/openai';
+
 const kliraAI = createKliraVercelAI({
   checkInput: true,
   checkOutput: true,
@@ -44,13 +85,63 @@ const kliraAI = createKliraVercelAI({
 
 const safeGenerateText = kliraAI.wrapGenerateText(generateText);
 
-// 3. Use AI safely with automatic guardrails
 const result = await safeGenerateText({
   model: openai('gpt-4'),
   prompt: 'Tell me about renewable energy',
 });
 
 console.log(result.text); // Safe, compliant response
+```
+
+#### Option B: LangChain.js
+
+```typescript
+import { ChatOpenAI } from '@langchain/openai';
+import { KliraCallbackHandler } from 'klira/langchain';
+
+const model = new ChatOpenAI({
+  callbacks: [new KliraCallbackHandler({
+    guardrails: { enabled: true },
+    observability: { enabled: true },
+  })],
+});
+
+const response = await model.invoke('Your prompt here');
+```
+
+#### Option C: OpenAI SDK
+
+```typescript
+import { KliraOpenAI } from 'klira/openai';
+
+const client = new KliraOpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+  guardrails: { enabled: true },
+  observability: { enabled: true },
+});
+
+const completion = await client.chat.completions.create({
+  model: 'gpt-4',
+  messages: [{ role: 'user', content: 'Your prompt here' }],
+});
+```
+
+#### Option D: Decorator Pattern
+
+```typescript
+import { guardrails } from 'klira';
+
+class AIService {
+  @guardrails({
+    checkInput: true,
+    checkOutput: true,
+    onInputViolation: 'exception',
+  })
+  async generateContent(prompt: string): Promise<string> {
+    // Your AI generation logic
+    return result;
+  }
+}
 ```
 
 ## 🛡️ Features
@@ -217,6 +308,9 @@ KLIRA_POLICY_ENFORCEMENT=true
 KLIRA_VERBOSE=false
 KLIRA_OPENTELEMETRY_ENDPOINT=https://api.getklira.com/v1/traces
 
+# Custom policies path
+KLIRA_POLICIES_PATH=/path/to/custom-policies.yaml
+
 # For LLM fallback evaluation (optional)
 OPENAI_API_KEY=your_openai_key
 ```
@@ -236,7 +330,96 @@ await KliraAI.init({
 
 ## 🔧 Custom Policies
 
-Define custom guardrail rules:
+The SDK includes comprehensive default policies covering:
+- PII detection (SSN, credit cards, emails, phone numbers, addresses)
+- Content safety (hate speech, toxicity, harassment)
+- Professional domain restrictions (medical, legal, financial advice)
+- HR bias and discrimination prevention
+- Security vulnerability protection
+- Harmful content and self-harm prevention
+- MCP memory leak prevention (context spillage, credential leakage)
+
+### Using Custom Policies
+
+You can optionally provide your own policies file to extend or override defaults:
+
+```yaml
+# custom-policies.yaml
+version: "0.1.0"
+updated_at: "2025-10-31"
+policies:
+  - id: "company_secrets_001"
+    name: "Company Confidential Information Protection"
+    direction: "both"
+    domains: ["confidential", "proprietary", "internal", "secret"]
+    description: "Prevent leakage of company-specific confidential information"
+    action: "block"
+    guidelines:
+      - "Never share internal company codenames or project names"
+      - "Do not disclose proprietary algorithms or business logic"
+      - "Redact internal system names and infrastructure details"
+    patterns:
+      - "(?i)\\bPROJECT-[A-Z]+-\\d+\\b"
+      - "(?i)\\b(CONFIDENTIAL|PROPRIETARY|INTERNAL ONLY)\\b"
+      - "(?i)\\b(api-key-prod-[a-z0-9]+)\\b"
+
+  - id: "brand_voice_001"
+    name: "Brand Voice and Tone Guidelines"
+    direction: "outbound"
+    domains: ["communication", "brand", "voice", "tone"]
+    description: "Ensure AI outputs align with company brand guidelines"
+    action: "allow"
+    guidelines:
+      - "Maintain a professional yet approachable tone"
+      - "Use inclusive and accessible language"
+      - "Avoid technical jargon when communicating with end-users"
+```
+
+### Configure Custom Policies
+
+**Via environment variable:**
+```bash
+KLIRA_POLICIES_PATH=/path/to/custom-policies.yaml
+```
+
+**Via initialization:**
+```typescript
+await KliraAI.init({
+  apiKey: process.env.KLIRA_API_KEY,
+  policiesPath: './config/custom-policies.yaml',
+});
+
+// Alternative: via guardrails config
+await KliraAI.init({
+  apiKey: process.env.KLIRA_API_KEY,
+  guardrails: {
+    policyPath: './config/custom-policies.yaml',
+  },
+});
+```
+
+### Policy File Schema
+
+Each policy includes:
+- **id**: Unique identifier for the policy
+- **name**: Human-readable policy name
+- **direction**: `"inbound"`, `"outbound"`, or `"both"`
+- **domains**: Keywords for policy categorization and LLM fallback evaluation
+- **description**: Policy purpose and compliance references
+- **action**: `"block"` (reject content) or `"allow"` (permit with guidelines)
+- **guidelines**: Instructions for LLM on how to handle related content
+- **patterns**: Regex patterns for fast local pattern matching (optional)
+
+### Policy Behavior
+
+1. **Fast Rules**: Regex patterns are evaluated locally for privacy and performance
+2. **LLM Fallback**: When `OPENAI_API_KEY` is set, complex content is evaluated using domain keywords and guidelines
+3. **Policy Augmentation**: Guidelines are injected into prompts to proactively guide AI behavior
+4. **Hierarchical Enforcement**: Custom policies supplement (not replace) built-in protections
+
+**Note**: If no custom policies file is provided, the SDK uses comprehensive default policies suitable for most applications.
+
+### Programmatic Policy Management
 
 ```typescript
 const guardrails = KliraAI.getGuardrails();
@@ -259,6 +442,35 @@ guardrails.getAugmentation().addGuideline({
   priority: 9,
 });
 ```
+
+## 📦 Module System Support
+
+The SDK supports both ESM and CommonJS:
+
+### ES Modules (Recommended)
+
+```typescript
+import { KliraAI } from 'klira';
+import { createKliraVercelAI } from 'klira/vercel-ai';
+```
+
+### CommonJS
+
+```javascript
+const { KliraAI } = require('klira');
+const { createKliraVercelAI } = require('klira/vercel-ai');
+```
+
+## 📏 Bundle Size
+
+The SDK is optimized for minimal bundle impact:
+
+- **Core SDK**: ~150 KB (ESM, gzipped)
+- **Vercel AI Adapter**: ~75 KB
+- **LangChain Adapter**: ~50 KB
+- **OpenAI Adapter**: ~75 KB
+
+Tree-shaking is supported when using ES modules.
 
 ## 📚 Examples
 
@@ -284,6 +496,67 @@ npm test -- --grep "guardrails"
 # Run in watch mode
 npm test -- --watch
 ```
+
+## ⚙️ TypeScript Configuration
+
+For optimal TypeScript support:
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "strict": true
+  }
+}
+```
+
+## 🔍 Verification
+
+Verify your installation:
+
+```typescript
+import { KliraAI } from 'klira';
+
+await KliraAI.init({
+  apiKey: process.env.KLIRA_API_KEY,
+  appName: 'test-app',
+  verbose: true, // Enable debug logging
+});
+
+console.log('Klira AI SDK initialized successfully');
+console.log('Version:', require('klira/package.json').version);
+```
+
+## 🛠️ Troubleshooting
+
+### Common Issues
+
+**Module not found errors:**
+```bash
+# Clear npm cache and reinstall
+rm -rf node_modules package-lock.json
+npm install
+```
+
+**TypeScript decorator errors:**
+```json
+// Add to tsconfig.json
+{
+  "compilerOptions": {
+    "experimentalDecorators": true
+  }
+}
+```
+
+**Peer dependency warnings:**
+Install the specific framework integration you need (warnings for unused frameworks can be ignored).
+
+**OpenTelemetry initialization errors:**
+Ensure Node.js version is 18.0.0 or higher.
 
 ## 📖 API Reference
 
@@ -324,22 +597,13 @@ We welcome contributions! Please see our [Contributing Guide](./CONTRIBUTING.md)
 
 ## 📜 License
 
-This project is licensed under the MIT License - see the [LICENSE](./LICENSE) file for details.
+This project is licensed under the Apache License 2.0 - see the [LICENSE](./LICENSE) file for details.
 
 ## 🆘 Support
 
 - **Documentation**: [https://docs.getklira.com](https://docs.getklira.com)
 - **GitHub Issues**: [https://github.com/kliraai/kliraai-js/issues](https://github.com/kliraai/kliraai-js/issues)
-- **Email Support**: [support@getklira.com](mailto:support@getklira.com)
-
-## 🗺️ Roadmap
-
-- [ ] Browser/Edge Runtime Support
-- [ ] Additional Framework Adapters (Anthropic Claude, Google GenAI)
-- [ ] Visual Policy Builder
-- [ ] Advanced Streaming Analytics
-- [ ] Multi-Language Detection
-- [ ] Custom LLM Integration for Guardrails
+- **Email Support**: [ricardo@getklira.com](mailto:ricardo@getklira.com)
 
 ---
 
