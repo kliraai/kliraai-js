@@ -10,37 +10,33 @@ The official JavaScript/TypeScript SDK for [Klira AI](https://getklira.com) - pr
 
 ## 🚀 Installation
 
-### From npm (Recommended)
-
-```bash
-npm install klira
-```
-
-### From GitHub
-
 Install directly from the GitHub repository:
 
 ```bash
 npm install github:kliraai/kliraai-js
 ```
 
-**Note**: When installing from GitHub, the package will be built automatically using the `prepare` script. Ensure you have Node.js 18.0.0+ installed.
+**Note**: The package will be built automatically using the `prepare` script. Ensure you have Node.js 18.0.0+ installed.
 
 ### What's Included
 
 The SDK includes everything you need:
 - Core guardrails engine with PII detection, content safety, and prompt injection protection
 - OpenTelemetry integration for distributed tracing
-- Decorator pattern support (works standalone, no framework required)
+- Custom adapter for framework-agnostic integration with any LLM provider
 - Adapters for Vercel AI SDK, LangChain.js, and OpenAI SDK
+- Decorator pattern support (works standalone, no framework required)
 - Configuration management with environment variable support
 - Custom policy framework
 
 ### Framework Dependencies (Optional)
 
-The SDK works standalone with the decorator pattern. Framework integrations are optional peer dependencies:
+The SDK works standalone with the **Custom Adapter** and **Decorator Pattern** - no additional dependencies required! Framework integrations are optional peer dependencies:
 
 ```bash
+# For Custom Adapter (Framework-Agnostic) - NO additional dependencies needed!
+# Works out of the box with: import { createKliraAgent } from 'klira/custom'
+
 # For Vercel AI SDK integration
 npm install ai @ai-sdk/openai
 
@@ -51,7 +47,7 @@ npm install @langchain/core @langchain/openai
 npm install openai
 ```
 
-**Note**: You only need to install framework dependencies if you're using that specific integration. The decorator pattern and core SDK functionality work without any additional dependencies.
+**Note**: The **Custom Adapter** requires ZERO additional dependencies - perfect for custom LLM implementations, local models, or any AI provider. Framework adapters only need to be installed if using that specific integration.
 
 ## 🚀 Quick Start
 
@@ -144,6 +140,50 @@ class AIService {
 }
 ```
 
+#### Option E: Custom Adapter (Framework-Agnostic)
+
+**Perfect for: Custom LLM implementations, local models, or any AI provider**
+
+```typescript
+import { createKliraAgent, FunctionLLMProvider } from 'klira/custom';
+
+// Wrap your custom LLM logic
+const customLLM = async (request) => {
+  // Your custom AI code here (API calls, local models, etc.)
+  const response = await myCustomAIFunction(request.messages);
+
+  return {
+    content: response,
+    model: 'my-custom-model',
+    usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
+  };
+};
+
+// Create Klira agent with full guardrails
+const provider = new FunctionLLMProvider('my-provider', customLLM);
+const agent = createKliraAgent({
+  provider,
+  checkInput: true,
+  checkOutput: true,
+  augmentPrompt: true,
+  observability: { enabled: true },
+});
+
+// Use it like any other provider
+const response = await agent.complete({
+  messages: [{ role: 'user', content: 'Your prompt here' }],
+});
+```
+
+**Key Benefits:**
+- ✅ Works with **any LLM provider** (OpenAI-compatible, Anthropic, local models, custom APIs)
+- ✅ **No framework dependencies** - use your existing code as-is
+- ✅ Full guardrails, observability, and compliance support
+- ✅ Streaming support with real-time guardrails
+- ✅ Built-in providers: `HttpLLMProvider`, `FunctionLLMProvider`, or implement custom `LLMProvider`
+
+See [Custom Adapter Examples](#custom-adapter-framework-agnostic) for more details.
+
 ## 🛡️ Features
 
 ### Comprehensive Guardrails
@@ -161,9 +201,10 @@ class AIService {
 
 ### Multi-Framework Support
 - **🎯 Vercel AI SDK** (Primary focus) - Deep integration with middleware
+- **🔧 Custom Adapter** (Framework-Agnostic) - Works with any LLM provider or custom code
 - **LangChain.js** - Callback-based instrumentation
 - **OpenAI SDK** - Direct wrapper support
-- **Custom Applications** - Decorator and manual integration
+- **Decorator Pattern** - Declarative guardrails for any function
 
 ### TypeScript-First
 - **Full Type Safety**: Comprehensive TypeScript definitions
@@ -222,6 +263,241 @@ const client = new KliraOpenAI({
   observability: { enabled: true }
 });
 ```
+
+### Custom Adapter (Framework-Agnostic)
+
+**Perfect for custom LLM implementations, local models, or any AI provider without framework dependencies.**
+
+The Custom Adapter provides a flexible, provider-agnostic way to integrate Klira AI guardrails with **any** LLM implementation - whether it's a custom API, local model, or proprietary system.
+
+#### Quick Start
+
+```typescript
+import { createKliraAgent, FunctionLLMProvider } from 'klira/custom';
+
+// Define your custom LLM logic
+const customLLM = async (request) => {
+  // Your existing LLM code here - API calls, local models, etc.
+  const userMessage = request.messages.find(m => m.role === 'user')?.content;
+  const response = await yourCustomAIFunction(userMessage);
+
+  return {
+    content: response,
+    model: 'your-model-name',
+    usage: {
+      promptTokens: estimateTokens(userMessage),
+      completionTokens: estimateTokens(response),
+      totalTokens: estimateTokens(userMessage + response),
+    },
+  };
+};
+
+// Create provider and agent
+const provider = new FunctionLLMProvider('my-custom-provider', customLLM);
+const agent = createKliraAgent({
+  provider,
+  checkInput: true,         // Enable input guardrails
+  checkOutput: true,        // Enable output guardrails
+  augmentPrompt: true,      // Add safety guidelines to prompts
+  observability: {
+    enabled: true,          // Track in Klira dashboard
+  },
+});
+
+// Use it!
+const response = await agent.complete({
+  messages: [
+    { role: 'user', content: 'Your prompt here' },
+  ],
+});
+
+console.log(response.content);
+```
+
+#### Provider Types
+
+**1. Function-Based Provider** (Simplest)
+
+```typescript
+import { FunctionLLMProvider } from 'klira/custom';
+
+const provider = new FunctionLLMProvider('my-provider', async (request) => {
+  // Your custom logic
+  return {
+    content: 'AI response',
+    model: 'custom-model',
+    usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
+  };
+});
+```
+
+**2. HTTP-Based Provider** (For REST APIs)
+
+```typescript
+import { HttpLLMProvider } from 'klira/custom';
+
+const provider = new HttpLLMProvider(
+  'my-api',
+  'https://api.example.com/v1/chat/completions',
+  {
+    'Authorization': 'Bearer YOUR_API_KEY',
+    'Content-Type': 'application/json',
+  }
+);
+```
+
+**3. Custom Provider Class** (Full Control)
+
+```typescript
+import { type LLMProvider, type LLMRequest, type LLMResponse } from 'klira/custom';
+
+class MyCustomProvider implements LLMProvider {
+  name = 'my-custom-provider';
+
+  async complete(request: LLMRequest): Promise<LLMResponse> {
+    // Your implementation here
+    const response = await this.callYourAPI(request.messages);
+
+    return {
+      content: response.text,
+      model: request.model || 'default-model',
+      usage: {
+        promptTokens: response.usage.input,
+        completionTokens: response.usage.output,
+        totalTokens: response.usage.total,
+      },
+    };
+  }
+
+  async *stream(request: LLMRequest): AsyncIterable<Partial<LLMResponse>> {
+    // Optional: implement streaming
+    const stream = await this.streamYourAPI(request.messages);
+    for await (const chunk of stream) {
+      yield { content: chunk.text };
+    }
+  }
+
+  private async callYourAPI(messages: any[]) {
+    // Your API call logic
+  }
+}
+
+const provider = new MyCustomProvider();
+const agent = createKliraAgent({ provider });
+```
+
+#### Streaming Support
+
+The Custom Adapter supports real-time streaming with guardrails:
+
+```typescript
+const streamingProvider = new FunctionLLMProvider(
+  'streaming-provider',
+  async (request) => {
+    /* complete function */
+  },
+  async function* (request) {
+    // Streaming function
+    const words = ['Hello', 'world', 'from', 'custom', 'provider'];
+    for (const word of words) {
+      yield { content: word + ' ' };
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    yield { usage: { promptTokens: 5, completionTokens: 5, totalTokens: 10 } };
+  }
+);
+
+const agent = createKliraAgent({
+  provider: streamingProvider,
+  streaming: {
+    enableGuardrails: true,    // Check output during streaming
+    checkInterval: 3,          // Check every 3 chunks
+    onViolation: 'interrupt',  // Stop stream on violation
+  },
+});
+
+const stream = await agent.stream({
+  messages: [{ role: 'user', content: 'Tell me a story' }],
+});
+
+for await (const chunk of stream) {
+  if (chunk.content) {
+    process.stdout.write(chunk.content);
+  }
+}
+```
+
+#### Advanced Configuration
+
+```typescript
+const agent = createKliraAgent({
+  provider: myProvider,
+
+  // Guardrails options
+  checkInput: true,
+  checkOutput: true,
+  augmentPrompt: true,
+  onInputViolation: 'exception',   // 'exception' | 'block' | 'continue'
+  onOutputViolation: 'redact',     // 'exception' | 'redact' | 'continue'
+
+  // Observability
+  observability: {
+    enabled: true,
+    traceMetadata: true,
+    trackTokenUsage: true,
+  },
+
+  // Streaming
+  streaming: {
+    enableGuardrails: true,
+    checkInterval: 5,
+    onViolation: 'interrupt',      // 'interrupt' | 'continue' | 'replace'
+  },
+
+  // MCP Protection (memory leak prevention)
+  mcpProtection: {
+    enabled: true,
+    strictMode: false,
+  },
+});
+```
+
+#### Multi-turn Conversations
+
+```typescript
+let messages = [
+  { role: 'user', content: 'Hello, tell me about AI safety' },
+];
+
+// First turn
+let response = await agent.complete({ messages });
+messages.push({ role: 'assistant', content: response.content });
+
+// Second turn
+messages.push({ role: 'user', content: 'What are the main challenges?' });
+response = await agent.complete({ messages });
+```
+
+#### Use Cases
+
+Perfect for:
+- **Custom AI APIs**: Wrap proprietary or internal LLM APIs
+- **Local Models**: Integrate Ollama, llama.cpp, or other local models
+- **OpenAI-Compatible APIs**: Use with Together AI, Anyscale, Groq, etc.
+- **Hybrid Systems**: Combine multiple LLM providers with custom logic
+- **Legacy Systems**: Add guardrails to existing AI implementations
+- **Testing & Development**: Mock LLM responses for testing
+
+#### Complete Example
+
+See our [custom-agent-example.ts](./examples/custom-agent-example.ts) for complete working examples including:
+- OpenAI-compatible provider
+- Local Llama/Ollama integration
+- Function-based custom logic
+- HTTP REST API integration
+- Streaming with guardrails
+- Multi-turn conversations
+- Error handling and retries
 
 ## 🎭 Decorator Usage
 
@@ -466,6 +742,7 @@ const { createKliraVercelAI } = require('klira/vercel-ai');
 The SDK is optimized for minimal bundle impact:
 
 - **Core SDK**: ~150 KB (ESM, gzipped)
+- **Custom Adapter**: ~75 KB (Framework-agnostic)
 - **Vercel AI Adapter**: ~75 KB
 - **LangChain Adapter**: ~50 KB
 - **OpenAI Adapter**: ~75 KB
@@ -476,6 +753,7 @@ Tree-shaking is supported when using ES modules.
 
 Check out our [examples directory](./examples/) for complete working examples:
 
+- **[Custom Agent](./examples/custom-agent-example.ts)** - Framework-agnostic integration with custom LLM providers
 - **[Basic Usage](./examples/basic-usage.ts)** - Getting started with guardrails
 - **[Streaming](./examples/streaming.ts)** - Real-time guardrails for streaming
 - **[Custom Policies](./examples/custom-policies.ts)** - Defining custom rules
