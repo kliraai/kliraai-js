@@ -202,6 +202,7 @@ export class FastRulesEngine {
     return {
       matches,
       blocked,
+      allowed: !blocked,
       transformedContent,
       matchedPolicies,
       processingTime: Date.now() - startTime,
@@ -244,6 +245,7 @@ export class FastRulesEngine {
     return {
       matches: legacyResult.matches,
       blocked: legacyResult.blocked,
+      allowed: !legacyResult.blocked,
       transformedContent: legacyResult.transformedContent,
       matchedPolicies: legacyResult.matches.map(v => v.ruleId),
       processingTime: Date.now() - startTime,
@@ -257,6 +259,7 @@ export class FastRulesEngine {
     matches: PolicyMatch[];
     transformedContent: string;
     blocked: boolean;
+    allowed: boolean;
   } {
     const matches: PolicyMatch[] = [];
     const transformedContent = content; // Never modified - content is unchanged
@@ -293,6 +296,7 @@ export class FastRulesEngine {
       matches,
       transformedContent, // Always equals input content
       blocked,
+      allowed: !blocked,
     };
   }
 

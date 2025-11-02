@@ -42,6 +42,7 @@ export interface PolicyMatch {
 export interface PolicyEvaluationResult {
   matches: PolicyMatch[];
   blocked: boolean;
+  allowed: boolean;
   transformedContent?: string;
   matchedPolicies: string[];
   processingTime?: number;

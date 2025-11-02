@@ -88,6 +88,11 @@ export interface GuardrailOptions {
   enforcementMode?: 'monitor' | 'enforce';
   customTags?: Record<string, string>;
   trackPolicyUsage?: boolean;
+  // Metadata for tracing
+  metadata?: {
+    userId?: string;
+    [key: string]: any;
+  };
 }
 
 export interface VercelAIAdapterOptions extends GuardrailOptions {

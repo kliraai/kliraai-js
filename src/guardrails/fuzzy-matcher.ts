@@ -16,6 +16,15 @@ export interface FuzzyMatch {
   similarity: number; // 0-100 percentage
 }
 
+export interface FuzzyMatchStats {
+  matchedCount: number;
+  totalPatterns: number;
+  minScore: number;
+  maxScore: number;
+  avgScore: number;
+  topMatch?: string;
+}
+
 export interface FuzzyMatcherConfig {
   threshold?: number; // Default: 70 (minimum similarity to match)
   enabled?: boolean;  // Default: true
@@ -77,6 +86,55 @@ export class FuzzyMatcher {
     }
 
     return matches;
+  }
+
+  /**
+   * Check fuzzy matches and return statistics
+   */
+  checkFuzzyMatchWithStats(
+    message: string,
+    domains: string[],
+    threshold?: number
+  ): { matches: FuzzyMatch[]; stats: FuzzyMatchStats } {
+    if (!this.enabled) {
+      return {
+        matches: [],
+        stats: {
+          matchedCount: 0,
+          totalPatterns: domains.length,
+          minScore: 0,
+          maxScore: 0,
+          avgScore: 0,
+        }
+      };
+    }
+
+    const matches = this.checkFuzzyMatch(message, domains, threshold);
+
+    if (matches.length === 0) {
+      return {
+        matches: [],
+        stats: {
+          matchedCount: 0,
+          totalPatterns: domains.length,
+          minScore: 0,
+          maxScore: 0,
+          avgScore: 0,
+        }
+      };
+    }
+
+    const scores = matches.map(m => m.similarity);
+    const stats: FuzzyMatchStats = {
+      matchedCount: matches.length,
+      totalPatterns: domains.length,
+      minScore: Math.min(...scores),
+      maxScore: Math.max(...scores),
+      avgScore: scores.reduce((a, b) => a + b, 0) / scores.length,
+      topMatch: matches[0]?.domain, // First match is typically best
+    };
+
+    return { matches, stats };
   }
 
   /**

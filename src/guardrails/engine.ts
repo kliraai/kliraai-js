@@ -142,6 +142,14 @@ export class GuardrailsEngine {
       this.setConversationId();
     }
 
+    // Extract userId from options if provided
+    const userId = options.metadata?.userId;
+
+    // Update conversation context with userId
+    if (this.tracing && userId) {
+      this.tracing.setConversationContext(this.currentConversationId!, userId);
+    }
+
     const startTime = Date.now();
     const evaluatedPolicies: string[] = [];
     const triggeredPolicies: string[] = [];
@@ -200,7 +208,7 @@ export class GuardrailsEngine {
         const llmResult = await this.llmFallback.evaluateWithLLM(
           transformedContent,
           matches,
-          { options }
+          { options, tracing: this.tracing }
         );
 
         if (llmResult) {
@@ -342,6 +350,14 @@ export class GuardrailsEngine {
       this.setConversationId();
     }
 
+    // Extract userId from options if provided
+    const userId = options.metadata?.userId;
+
+    // Update conversation context with userId
+    if (this.tracing && userId) {
+      this.tracing.setConversationContext(this.currentConversationId!, userId);
+    }
+
     const startTime = Date.now();
     const evaluatedPolicies: string[] = [];
     const triggeredPolicies: string[] = [];
@@ -400,7 +416,7 @@ export class GuardrailsEngine {
         const llmResult = await this.llmFallback.evaluateWithLLM(
           transformedContent,
           matches,
-          { options, direction: 'outbound' }
+          { options, direction: 'outbound', tracing: this.tracing }
         );
 
         if (llmResult) {

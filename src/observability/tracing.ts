@@ -351,16 +351,21 @@ export class KliraTracing {
     conversationId?: string
   ): Promise<T> {
     const tracer = this.getTracer('compliance');
+    const startTime = process.hrtime.bigint(); // Capture start time
+
     const span = tracer.startSpan('klira.guardrails.check_input', {
       attributes: {
         'klira.instrumented': true,
         'compliance.direction': 'inbound',
+        'klira.direction': 'inbound', // Platform-compatible direction
         'compliance.decision.allowed': result.allowed,
         'compliance.decision.action': result.blocked ? 'block' : 'allow',
         'compliance.decision.confidence': 1.0,
         'compliance.input_length': inputLength,
         'compliance.evaluation.method': this.determineEvaluationMethod(result),
         'compliance.decision.layer': this.determineDecisionLayer(result),
+        'klira.component': 'guardrails', // Component identifier
+        'klira.operation': 'check_input', // Operation identifier
       },
     });
 
@@ -368,13 +373,31 @@ export class KliraTracing {
     if (conversationId) {
       span.setAttribute('traceloop.association.properties.conversation_id', conversationId);
       span.setAttribute('klira.conversation_id', conversationId);
+      span.setAttribute('conversation_id', conversationId); // Platform-compatible attribute
     }
 
     return context.with(trace.setSpan(context.active(), span), async () => {
       try {
-        const result = await fn();
+        const fnResult = await fn();
+
+        // Calculate duration
+        const endTime = process.hrtime.bigint();
+        const durationNs = Number(endTime - startTime);
+        const durationMs = durationNs / 1_000_000;
+
+        // Add duration attributes
+        span.setAttribute('klira.duration_ms', durationMs);
+        span.setAttribute('duration_ms', durationMs); // Platform-compatible attribute
+
+        // Add decision layer attributes
+        span.setAttributes({
+          'decision.layer': this.determineDecisionLayer(result),
+          'decision.allowed': result.allowed,
+          'decision.confidence': this.calculateDecisionConfidence(result),
+        });
+
         span.setStatus({ code: SpanStatusCode.OK });
-        return result;
+        return fnResult;
       } catch (error) {
         span.recordException(error as Error);
         span.setStatus({
@@ -398,16 +421,21 @@ export class KliraTracing {
     conversationId?: string
   ): Promise<T> {
     const tracer = this.getTracer('compliance');
+    const startTime = process.hrtime.bigint(); // Capture start time
+
     const span = tracer.startSpan('klira.guardrails.check_output', {
       attributes: {
         'klira.instrumented': true,
         'compliance.direction': 'outbound',
+        'klira.direction': 'outbound', // Platform-compatible direction
         'compliance.decision.allowed': result.allowed,
         'compliance.decision.action': result.blocked ? 'block' : 'allow',
         'compliance.decision.confidence': 1.0,
         'compliance.input_length': outputLength,
         'compliance.evaluation.method': this.determineEvaluationMethod(result),
         'compliance.decision.layer': this.determineDecisionLayer(result),
+        'klira.component': 'guardrails', // Component identifier
+        'klira.operation': 'check_output', // Operation identifier
       },
     });
 
@@ -415,13 +443,31 @@ export class KliraTracing {
     if (conversationId) {
       span.setAttribute('traceloop.association.properties.conversation_id', conversationId);
       span.setAttribute('klira.conversation_id', conversationId);
+      span.setAttribute('conversation_id', conversationId); // Platform-compatible attribute
     }
 
     return context.with(trace.setSpan(context.active(), span), async () => {
       try {
-        const result = await fn();
+        const fnResult = await fn();
+
+        // Calculate duration
+        const endTime = process.hrtime.bigint();
+        const durationNs = Number(endTime - startTime);
+        const durationMs = durationNs / 1_000_000;
+
+        // Add duration attributes
+        span.setAttribute('klira.duration_ms', durationMs);
+        span.setAttribute('duration_ms', durationMs); // Platform-compatible attribute
+
+        // Add decision layer attributes
+        span.setAttributes({
+          'decision.layer': this.determineDecisionLayer(result),
+          'decision.allowed': result.allowed,
+          'decision.confidence': this.calculateDecisionConfidence(result),
+        });
+
         span.setStatus({ code: SpanStatusCode.OK });
-        return result;
+        return fnResult;
       } catch (error) {
         span.recordException(error as Error);
         span.setStatus({
@@ -438,13 +484,15 @@ export class KliraTracing {
   /**
    * Create fast_rules.evaluate span
    */
-  traceFastRules<T>(
+  traceFastRules<T extends { allowed: boolean; blocked: boolean; matches: any[]; fuzzyMatchStats?: any }>(
     fn: () => T,
     direction: 'inbound' | 'outbound',
     policiesCount: number,
     conversationId?: string
   ): T {
     const tracer = this.getTracer('fast_rules');
+    const startTime = process.hrtime.bigint(); // Capture start time
+
     const span = tracer.startSpan('klira.guardrails.fast_rules.evaluate', {
       attributes: {
         'klira.instrumented': true,
@@ -452,6 +500,9 @@ export class KliraTracing {
         'klira.operation': 'evaluate',
         'klira.policies_count': policiesCount,
         'klira.direction': direction,
+        'component': 'guardrails.fast_rules', // Platform-compatible
+        'operation': 'evaluate', // Platform-compatible
+        'direction': direction, // Platform-compatible
       },
     });
 
@@ -459,11 +510,45 @@ export class KliraTracing {
     if (conversationId) {
       span.setAttribute('traceloop.association.properties.conversation_id', conversationId);
       span.setAttribute('klira.conversation_id', conversationId);
+      span.setAttribute('conversation_id', conversationId); // Platform-compatible attribute
     }
 
     return context.with(trace.setSpan(context.active(), span), () => {
       try {
         const result = fn();
+
+        // Calculate duration for synchronous operation
+        const endTime = process.hrtime.bigint();
+        const durationNs = Number(endTime - startTime);
+        const durationMs = durationNs / 1_000_000;
+
+        // Add duration attributes
+        span.setAttribute('klira.duration_ms', durationMs);
+        span.setAttribute('duration_ms', durationMs); // Platform-compatible attribute
+
+        // Add fast rules decision attributes
+        span.setAttribute('guardrails.fast_rules.allowed', result.allowed);
+        span.setAttribute('guardrails.fast_rules.blocked', result.blocked);
+
+        // Calculate confidence from matches
+        const confidence = this.calculateFastRulesConfidence(result.matches);
+        span.setAttribute('guardrails.fast_rules.confidence', confidence);
+
+        // Add fuzzy match statistics if available
+        if (result.fuzzyMatchStats) {
+          const stats = result.fuzzyMatchStats;
+          span.setAttributes({
+            'klira.fuzzy_match.matched_count': stats.matchedCount,
+            'klira.fuzzy_match.total_patterns': stats.totalPatterns,
+            'klira.fuzzy_match.min_score': stats.minScore,
+            'klira.fuzzy_match.max_score': stats.maxScore,
+            'klira.fuzzy_match.avg_score': stats.avgScore,
+          });
+          if (stats.topMatch) {
+            span.setAttribute('klira.fuzzy_match.top_match', stats.topMatch);
+          }
+        }
+
         span.setStatus({ code: SpanStatusCode.OK });
         return result;
       } catch (error) {
@@ -505,6 +590,54 @@ export class KliraTracing {
     }
     // No matches - check if blocked or allowed
     return result.blocked ? 'default_block' : 'default_allow';
+  }
+
+  /**
+   * Calculate confidence score for fast rules evaluation
+   */
+  private calculateFastRulesConfidence(matches: any[]): number {
+    if (matches.length === 0) {
+      return 1.0; // High confidence when no matches (clear pass)
+    }
+
+    // If there are matches with confidence scores, average them
+    const matchesWithConfidence = matches.filter(m => m.confidence !== undefined);
+    if (matchesWithConfidence.length > 0) {
+      const avgConfidence = matchesWithConfidence.reduce((sum: number, m: any) => sum + m.confidence, 0) / matchesWithConfidence.length;
+      return avgConfidence;
+    }
+
+    // Default to 0.9 for pattern matches without explicit confidence
+    return 0.9;
+  }
+
+  /**
+   * Calculate overall decision confidence
+   */
+  private calculateDecisionConfidence(result: GuardrailResult): number {
+    if (result.matches && result.matches.length > 0) {
+      // Use confidence from matches if available
+      const matchesWithConfidence = result.matches.filter(m => m.metadata?.confidence !== undefined);
+      if (matchesWithConfidence.length > 0) {
+        return matchesWithConfidence.reduce((sum, m) => sum + (m.metadata?.confidence || 0), 0) / matchesWithConfidence.length;
+      }
+
+      // Check if LLM match exists
+      const hasLLMMatch = result.matches.some(m =>
+        m.ruleId.includes('llm-') || m.metadata?.source === 'llm'
+      );
+
+      if (hasLLMMatch) {
+        // LLM fallback confidence (typically lower than fast rules)
+        return 0.7;
+      }
+
+      // Fast rules pattern match
+      return 0.9;
+    }
+
+    // No matches - high confidence in allow decision
+    return 1.0;
   }
 
   /**
@@ -573,10 +706,13 @@ export class KliraTracing {
     const contextAttributes: Partial<SpanAttributes> = {
       'klira.conversation_id': conversationId,
       'traceloop.association.properties.conversation_id': conversationId,
+      'conversation_id': conversationId, // Platform-compatible attribute
     };
 
     if (userId) {
       contextAttributes['klira.user_id'] = userId;
+      contextAttributes['user_id'] = userId; // Platform-compatible attribute
+      contextAttributes['traceloop.association.properties.user_id'] = userId;
     }
 
     this.addAttributes(contextAttributes);

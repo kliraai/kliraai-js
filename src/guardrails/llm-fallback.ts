@@ -184,7 +184,7 @@ class OpenAILLMService implements LLMService {
 
   async evaluate(content: string, context?: any): Promise<LLMEvaluationResult> {
     const systemPrompt = this.createEvaluationPrompt(context?.fastRuleViolations || [], context);
-    
+
     try {
       // Import OpenAI dynamically to avoid requiring it as a dependency
       // @ts-ignore - Optional peer dependency, dynamically imported at runtime
@@ -193,6 +193,19 @@ class OpenAILLMService implements LLMService {
       });
       const { OpenAI } = OpenAIModule;
       const openai = new OpenAI({ apiKey: this.apiKey });
+
+      // Record LLM call request attributes via tracing
+      if (context?.tracing) {
+        context.tracing.addAttributes({
+          'gen_ai.system': 'openai',
+          'gen_ai.request.model': this.model,
+          'gen_ai.request.temperature': this.temperature,
+          'gen_ai.prompt.0.role': 'system',
+          'gen_ai.prompt.0.content': this.truncate(systemPrompt, 1000),
+          'gen_ai.prompt.1.role': 'user',
+          'gen_ai.prompt.1.content': this.truncate(content, 1000),
+        });
+      }
 
       const response = await openai.chat.completions.create({
         model: this.model,
@@ -204,7 +217,21 @@ class OpenAILLMService implements LLMService {
         response_format: { type: 'json_object' },
       });
 
-      const result = JSON.parse(response.choices[0]?.message?.content || '{}');
+      const resultContent = response.choices[0]?.message?.content || '{}';
+      const result = JSON.parse(resultContent);
+
+      // Record LLM response attributes
+      if (context?.tracing) {
+        context.tracing.addAttributes({
+          'gen_ai.response.model': response.model,
+          'gen_ai.usage.completion_tokens': response.usage?.completion_tokens || 0,
+          'gen_ai.usage.prompt_tokens': response.usage?.prompt_tokens || 0,
+          'gen_ai.usage.total_tokens': response.usage?.total_tokens || 0,
+          'gen_ai.completion.0.role': 'assistant',
+          'gen_ai.completion.0.content': this.truncate(resultContent, 1000),
+          'gen_ai.completion.0.finish_reason': response.choices[0]?.finish_reason || 'stop',
+        });
+      }
       
       return {
         safe: result.safe || false,
@@ -318,6 +345,16 @@ Be thorough but balanced in your evaluation. Consider context and intent.`;
   }
 
   /**
+   * Truncate string to max length for tracing
+   */
+  private truncate(str: string, maxLength: number): string {
+    if (str.length <= maxLength) {
+      return str;
+    }
+    return str.substring(0, maxLength - 3) + '...';
+  }
+
+  /**
    * Check if YAML policies are initialized
    */
   isInitialized(): boolean {
@@ -358,7 +395,7 @@ class AnthropicLLMService implements LLMService {
 
   async evaluate(content: string, context?: any): Promise<LLMEvaluationResult> {
     const systemPrompt = this.createEvaluationPrompt(context?.fastRuleViolations || [], context);
-    
+
     try {
       // Import Anthropic dynamically to avoid requiring it as a dependency
       // @ts-ignore - Optional peer dependency, dynamically imported at runtime
@@ -367,6 +404,19 @@ class AnthropicLLMService implements LLMService {
       }) as any;
       const Anthropic = AnthropicModule.default;
       const anthropic = new Anthropic({ apiKey: this.apiKey });
+
+      // Record LLM call request attributes via tracing
+      if (context?.tracing) {
+        context.tracing.addAttributes({
+          'gen_ai.system': 'anthropic',
+          'gen_ai.request.model': this.model,
+          'gen_ai.request.temperature': this.temperature,
+          'gen_ai.prompt.0.role': 'system',
+          'gen_ai.prompt.0.content': this.truncate(systemPrompt, 1000),
+          'gen_ai.prompt.1.role': 'user',
+          'gen_ai.prompt.1.content': this.truncate(content, 1000),
+        });
+      }
 
       const response = await anthropic.messages.create({
         model: this.model,
@@ -388,7 +438,21 @@ class AnthropicLLMService implements LLMService {
         throw new Error('Unexpected response format from Anthropic');
       }
 
-      const result = JSON.parse(textContent.text);
+      const resultText = textContent.text;
+      const result = JSON.parse(resultText);
+
+      // Record LLM response attributes
+      if (context?.tracing) {
+        context.tracing.addAttributes({
+          'gen_ai.response.model': response.model,
+          'gen_ai.usage.completion_tokens': response.usage?.output_tokens || 0,
+          'gen_ai.usage.prompt_tokens': response.usage?.input_tokens || 0,
+          'gen_ai.usage.total_tokens': (response.usage?.input_tokens || 0) + (response.usage?.output_tokens || 0),
+          'gen_ai.completion.0.role': 'assistant',
+          'gen_ai.completion.0.content': this.truncate(resultText, 1000),
+          'gen_ai.completion.0.finish_reason': response.stop_reason || 'end_turn',
+        });
+      }
       
       return {
         safe: result.safe || false,
@@ -492,6 +556,16 @@ Be thorough but balanced in your evaluation. Consider context and intent.`;
       },
     }));
   }
+
+  /**
+   * Truncate string to max length for tracing
+   */
+  private truncate(str: string, maxLength: number): string {
+    if (str.length <= maxLength) {
+      return str;
+    }
+    return str.substring(0, maxLength - 3) + '...';
+  }
 }
 
 /**
@@ -520,7 +594,7 @@ class GoogleLLMService implements LLMService {
 
   async evaluate(content: string, context?: any): Promise<LLMEvaluationResult> {
     const systemPrompt = this.createEvaluationPrompt(context?.fastRuleViolations || [], context);
-    
+
     try {
       // Import Google AI SDK dynamically
       // @ts-ignore - Optional peer dependency, dynamically imported at runtime
@@ -539,12 +613,38 @@ class GoogleLLMService implements LLMService {
       }) as any;
 
       const prompt = `${systemPrompt}\n\nEvaluate this content:\n\n${content}`;
+
+      // Record LLM call request attributes via tracing
+      if (context?.tracing) {
+        context.tracing.addAttributes({
+          'gen_ai.system': 'google',
+          'gen_ai.request.model': this.model,
+          'gen_ai.request.temperature': this.temperature,
+          'gen_ai.prompt.0.role': 'user',
+          'gen_ai.prompt.0.content': this.truncate(prompt, 1000),
+        });
+      }
+
       const result = await model.generateContent(prompt);
       const response = await result.response;
       const text = response.text();
 
       // Parse JSON response, handling potential formatting issues
       const parsed = JSON.parse(text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim());
+
+      // Record LLM response attributes
+      if (context?.tracing) {
+        const usageMetadata = response.usageMetadata || {};
+        context.tracing.addAttributes({
+          'gen_ai.response.model': this.model,
+          'gen_ai.usage.completion_tokens': usageMetadata.candidatesTokenCount || 0,
+          'gen_ai.usage.prompt_tokens': usageMetadata.promptTokenCount || 0,
+          'gen_ai.usage.total_tokens': usageMetadata.totalTokenCount || 0,
+          'gen_ai.completion.0.role': 'assistant',
+          'gen_ai.completion.0.content': this.truncate(text, 1000),
+          'gen_ai.completion.0.finish_reason': 'stop',
+        });
+      }
       
       return {
         safe: parsed.safe || false,
@@ -647,6 +747,16 @@ Be thorough but balanced in your evaluation. Consider context and intent.`;
       },
     }));
   }
+
+  /**
+   * Truncate string to max length for tracing
+   */
+  private truncate(str: string, maxLength: number): string {
+    if (str.length <= maxLength) {
+      return str;
+    }
+    return str.substring(0, maxLength - 3) + '...';
+  }
 }
 
 /**
@@ -678,7 +788,7 @@ class AzureOpenAILLMService implements LLMService {
 
   async evaluate(content: string, context?: any): Promise<LLMEvaluationResult> {
     const systemPrompt = this.createEvaluationPrompt(context?.fastRuleViolations || [], context);
-    
+
     try {
       // Import OpenAI dynamically and configure for Azure
       // @ts-ignore - Optional peer dependency, dynamically imported at runtime
@@ -686,7 +796,7 @@ class AzureOpenAILLMService implements LLMService {
         throw new Error('OpenAI package not found. Install with: npm install openai');
       });
       const { OpenAI } = OpenAIModule;
-      
+
       const openai = new OpenAI({
         apiKey: this.apiKey,
         baseURL: `${this.endpoint}/openai/deployments/${this.model}`,
@@ -695,6 +805,19 @@ class AzureOpenAILLMService implements LLMService {
           'api-key': this.apiKey,
         },
       });
+
+      // Record LLM call request attributes via tracing
+      if (context?.tracing) {
+        context.tracing.addAttributes({
+          'gen_ai.system': 'azure_openai',
+          'gen_ai.request.model': this.model,
+          'gen_ai.request.temperature': this.temperature,
+          'gen_ai.prompt.0.role': 'system',
+          'gen_ai.prompt.0.content': this.truncate(systemPrompt, 1000),
+          'gen_ai.prompt.1.role': 'user',
+          'gen_ai.prompt.1.content': this.truncate(content, 1000),
+        });
+      }
 
       const response = await openai.chat.completions.create({
         model: this.model,
@@ -706,7 +829,21 @@ class AzureOpenAILLMService implements LLMService {
         response_format: { type: 'json_object' },
       });
 
-      const result = JSON.parse(response.choices[0]?.message?.content || '{}');
+      const resultContent = response.choices[0]?.message?.content || '{}';
+      const result = JSON.parse(resultContent);
+
+      // Record LLM response attributes
+      if (context?.tracing) {
+        context.tracing.addAttributes({
+          'gen_ai.response.model': response.model,
+          'gen_ai.usage.completion_tokens': response.usage?.completion_tokens || 0,
+          'gen_ai.usage.prompt_tokens': response.usage?.prompt_tokens || 0,
+          'gen_ai.usage.total_tokens': response.usage?.total_tokens || 0,
+          'gen_ai.completion.0.role': 'assistant',
+          'gen_ai.completion.0.content': this.truncate(resultContent, 1000),
+          'gen_ai.completion.0.finish_reason': response.choices[0]?.finish_reason || 'stop',
+        });
+      }
       
       return {
         safe: result.safe || false,
@@ -808,5 +945,15 @@ Be thorough but balanced in your evaluation. Consider context and intent.`;
         policyId: v.policy_id,
       },
     }));
+  }
+
+  /**
+   * Truncate string to max length for tracing
+   */
+  private truncate(str: string, maxLength: number): string {
+    if (str.length <= maxLength) {
+      return str;
+    }
+    return str.substring(0, maxLength - 3) + '...';
   }
 }
