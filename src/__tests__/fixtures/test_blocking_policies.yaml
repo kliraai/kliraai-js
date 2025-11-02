@@ -1,0 +1,22 @@
+version: "1.0.0"
+updated_at: "2025-06-01"
+policies:
+  - id: "test_toxicity_block"
+    name: "Test Toxicity Blocking"
+    direction: "both"
+    domains: ["hate", "slur", "racist", "toxic"]
+    description: "Test policy for blocking toxic content"
+    action: "block"
+    patterns:
+      - "(?i)(kill|murder)\\s+(all\\s+)?(jews|muslims|blacks|gays)"
+      - "(?i)(nigger|faggot)"
+
+  - id: "test_pii_block"
+    name: "Test PII Blocking"
+    direction: "outbound"
+    domains: ["ssn", "email", "pii"]
+    description: "Test policy for blocking PII"
+    action: "block"
+    patterns:
+      - "\\b\\d{3}-?\\d{2}-?\\d{4}\\b"
+      - "\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b"

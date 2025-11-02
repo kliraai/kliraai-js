@@ -64,12 +64,12 @@ describe('YAML Policy System', () => {
 
     beforeEach(async () => {
       engine = new FastRulesEngine();
-      await engine.initialize();
+      await engine.initialize(new URL('./fixtures/test_blocking_policies.yaml', import.meta.url).pathname);
     });
 
     it('should initialize with YAML policies', async () => {
       expect(engine.isYAMLInitialized()).toBe(true);
-      
+
       const stats = engine.getPolicyCount();
       expect(stats.yaml).toBeGreaterThan(0);
     });
@@ -77,20 +77,20 @@ describe('YAML Policy System', () => {
     it('should detect email addresses using YAML policies', () => {
       const content = 'My email is john.doe@example.com';
       const result = engine.evaluateWithDirection(content, 'outbound');
-      
+
       // Should detect email in outbound direction (PII policy)
       expect(result.matches.length).toBeGreaterThan(0);
       expect(result.blocked).toBe(true);
-      expect(result.matchedPolicies).toContain('pii_001');
+      expect(result.matchedPolicies).toContain('test_pii_block');
     });
 
     it('should respect direction-based policies', () => {
       const content = 'Contact john.doe@example.com for help';
-      
+
       // Inbound should not trigger PII policy (outbound only)
       const inboundResult = engine.evaluateWithDirection(content, 'inbound');
       expect(inboundResult.blocked).toBe(false);
-      
+
       // Outbound should trigger PII policy
       const outboundResult = engine.evaluateWithDirection(content, 'outbound');
       expect(outboundResult.blocked).toBe(true);
@@ -136,13 +136,14 @@ describe('YAML Policy System', () => {
         fastRulesEnabled: true,
         augmentationEnabled: true,
         llmFallbackEnabled: false,
+        policyPath: new URL('./fixtures/test_blocking_policies.yaml', import.meta.url).pathname,
       });
       await engine.initialize();
     });
 
     it('should show policy statistics', () => {
       const stats = engine.getPolicyStats();
-      
+
       expect(stats.totalPolicies).toBeGreaterThan(0);
       expect(stats.fastRulesStats.yaml).toBeGreaterThan(0);
       expect(stats.augmentationStats.yamlInitialized).toBe(true);
@@ -151,10 +152,10 @@ describe('YAML Policy System', () => {
     it('should evaluate outbound content with YAML policies', async () => {
       const content = 'Here is my email: secret@example.com';
       const result = await engine.evaluateOutput(content);
-      
+
       expect(result.blocked).toBe(true);
       expect(result.matches.length).toBeGreaterThan(0);
-      expect(result.matches[0].ruleId).toBe('pii_001');
+      expect(result.matches[0].ruleId).toBe('test_pii_block');
     });
 
     it('should NOT provide guidelines when blocked', async () => {

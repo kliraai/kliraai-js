@@ -28,8 +28,8 @@ describe('Guardrails Engine', () => {
 
     beforeEach(async () => {
       engine = new FastRulesEngine();
-      // Initialize with YAML policies (hardcoded rules have been removed)
-      await engine.initialize();
+      // Initialize with test blocking policies for testing block behavior
+      await engine.initialize(new URL('../fixtures/test_blocking_policies.yaml', import.meta.url).pathname);
     });
 
     it('should detect email addresses', () => {
@@ -37,7 +37,7 @@ describe('Guardrails Engine', () => {
       const result = engine.evaluateWithDirection(content, 'outbound');
 
       expect(result.matches.length).toBeGreaterThan(0);
-      expect(result.matches.some(m => m.ruleId === 'pii_001')).toBe(true);
+      expect(result.matches.some(m => m.ruleId === 'test_pii_block')).toBe(true);
       expect(result.blocked).toBe(true);
     });
 
@@ -46,7 +46,7 @@ describe('Guardrails Engine', () => {
       const result = engine.evaluateWithDirection(content, 'outbound');
 
       expect(result.matches.length).toBeGreaterThan(0);
-      expect(result.matches.some(m => m.ruleId === 'pii_001')).toBe(true);
+      expect(result.matches.some(m => m.ruleId === 'test_pii_block')).toBe(true);
       expect(result.blocked).toBe(true);
     });
 
@@ -173,25 +173,26 @@ describe('Guardrails Engine', () => {
         fastRulesEnabled: true,
         augmentationEnabled: true,
         llmFallbackEnabled: false,
+        policyPath: new URL('../fixtures/test_blocking_policies.yaml', import.meta.url).pathname,
       });
       await engine.initialize();
     });
 
     it('should evaluate input with all layers', async () => {
-      const content = 'kill all jews'; // Triggers toxicity_001 policy via domain matching (direction: both)
+      const content = 'kill all jews'; // Triggers test_toxicity_block policy
       const result = await engine.evaluateInput(content);
 
       expect(result.blocked).toBe(true);
       expect(result.matches.length).toBeGreaterThan(0);
-      // Check for toxicity or hate-related violation
+      // Check for test toxicity policy
       const hasToxicityViolation = result.matches.some(v =>
-        v.ruleId.includes('toxicity') || v.message.toLowerCase().includes('toxic') || v.message.toLowerCase().includes('hate')
+        v.ruleId === 'test_toxicity_block'
       );
       expect(hasToxicityViolation).toBe(true);
     });
 
     it('should NOT generate guidelines for blocked violations', async () => {
-      const content = 'kill all jews'; // Triggers toxicity_001 policy with action: block
+      const content = 'kill all jews'; // Triggers test_toxicity_block policy with action: block
       const result = await engine.evaluateInput(content, {
         augmentPrompt: true,
       });
@@ -246,7 +247,9 @@ describe('Guardrails Engine', () => {
 
         const engine = GuardrailsEngine.getInstance({
           llmFallbackEnabled: true,
+          policyPath: new URL('../fixtures/test_blocking_policies.yaml', import.meta.url).pathname,
         });
+        await engine.initialize();
         engine.getLLMFallback().setLLMService(mockLLMService);
 
         await engine.evaluateInput(content);
@@ -257,7 +260,7 @@ describe('Guardrails Engine', () => {
 
       it('should NOT run LLM fallback when policies match with block action', async () => {
         // Using content that triggers a blocking policy (toxicity)
-        const content = 'kill all jews'; // This matches toxicity_001 blocking policy
+        const content = 'kill all jews'; // This matches test_toxicity_block policy
         const mockLLMService = {
           complete: vi.fn().mockResolvedValue({
             safe: true,
@@ -268,7 +271,9 @@ describe('Guardrails Engine', () => {
 
         const engine = GuardrailsEngine.getInstance({
           llmFallbackEnabled: true,
+          policyPath: new URL('../fixtures/test_blocking_policies.yaml', import.meta.url).pathname,
         });
+        await engine.initialize();
         engine.getLLMFallback().setLLMService(mockLLMService);
 
         const result = await engine.evaluateInput(content);
