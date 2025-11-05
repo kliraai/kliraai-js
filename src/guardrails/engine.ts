@@ -319,13 +319,8 @@ export class GuardrailsEngine {
 
     // Execute with tracing if available
     if (this.tracing) {
-      // First get the result so we can pass it to traceCheckInput
-      const result = await performEvaluation();
-
-      // Now wrap in check_input span with result attributes
       return this.tracing.traceCheckInput(
-        async () => result,
-        result,
+        performEvaluation,
         content.length,
         this.currentConversationId || undefined
       );
@@ -527,13 +522,8 @@ export class GuardrailsEngine {
 
     // Execute with tracing if available
     if (this.tracing) {
-      // First get the result so we can pass it to traceCheckOutput
-      const result = await performEvaluation();
-
-      // Now wrap in check_output span with result attributes
       return this.tracing.traceCheckOutput(
-        async () => result,
-        result,
+        performEvaluation,
         content.length,
         this.currentConversationId || undefined
       );

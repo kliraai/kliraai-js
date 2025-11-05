@@ -346,7 +346,6 @@ export class KliraTracing {
    */
   traceCheckInput<T>(
     fn: () => Promise<T>,
-    result: GuardrailResult,
     inputLength: number,
     conversationId?: string
   ): Promise<T> {
@@ -358,12 +357,7 @@ export class KliraTracing {
         'klira.instrumented': true,
         'compliance.direction': 'inbound',
         'klira.direction': 'inbound', // Platform-compatible direction
-        'compliance.decision.allowed': result.allowed,
-        'compliance.decision.action': result.blocked ? 'block' : 'allow',
-        'compliance.decision.confidence': 1.0,
         'compliance.input_length': inputLength,
-        'compliance.evaluation.method': this.determineEvaluationMethod(result),
-        'compliance.decision.layer': this.determineDecisionLayer(result),
         'klira.component': 'guardrails', // Component identifier
         'klira.operation': 'check_input', // Operation identifier
       },
@@ -378,27 +372,55 @@ export class KliraTracing {
 
     return context.with(trace.setSpan(context.active(), span), async () => {
       try {
-        const fnResult = await fn();
+        // Execute function ONCE inside the span
+        const result = await fn();
 
         // Calculate duration
         const endTime = process.hrtime.bigint();
         const durationNs = Number(endTime - startTime);
         const durationMs = durationNs / 1_000_000;
 
-        // Add duration attributes
-        span.setAttribute('klira.duration_ms', durationMs);
-        span.setAttribute('duration_ms', durationMs); // Platform-compatible attribute
+        // Cast result to GuardrailResult for type safety
+        const guardrailResult = result as unknown as GuardrailResult;
 
-        // Add decision layer attributes
+        // NOW add result-dependent attributes after execution
         span.setAttributes({
-          'decision.layer': this.determineDecisionLayer(result),
-          'decision.allowed': result.allowed,
-          'decision.confidence': this.calculateDecisionConfidence(result),
+          'klira.duration_ms': durationMs,
+          'duration_ms': durationMs, // Platform-compatible attribute
+          'compliance.decision.allowed': guardrailResult.allowed,
+          'compliance.decision.action': guardrailResult.blocked ? 'block' : 'allow',
+          'compliance.decision.confidence': this.calculateDecisionConfidence(guardrailResult),
+          'compliance.evaluation.method': this.determineEvaluationMethod(guardrailResult),
+          'compliance.decision.layer': this.determineDecisionLayer(guardrailResult),
+          'decision.layer': this.determineDecisionLayer(guardrailResult),
+          'decision.allowed': guardrailResult.allowed,
+          'decision.confidence': this.calculateDecisionConfidence(guardrailResult),
+          'compliance.guardrails.triggered': guardrailResult.triggeredPolicies?.length ?? 0,
+          'compliance.guardrails.policies': guardrailResult.triggeredPolicies?.join(',') ?? '',
         });
 
+        // Add augmentation attributes if guidelines were generated
+        if (guardrailResult.guidelines && guardrailResult.guidelines.length > 0) {
+          span.setAttributes({
+            'compliance.augmentation.enabled': true,
+            'compliance.augmentation.guidelines_count': guardrailResult.guidelines.length,
+            'compliance.augmentation.guidelines': guardrailResult.guidelines.join(' | '),
+          });
+        } else {
+          span.setAttribute('compliance.augmentation.enabled', false);
+        }
+
         span.setStatus({ code: SpanStatusCode.OK });
-        return fnResult;
+        return result;
       } catch (error) {
+        const endTime = process.hrtime.bigint();
+        const durationMs = Number(endTime - startTime) / 1_000_000;
+
+        span.setAttributes({
+          'klira.duration_ms': durationMs,
+          'error': true,
+        });
+
         span.recordException(error as Error);
         span.setStatus({
           code: SpanStatusCode.ERROR,
@@ -416,7 +438,6 @@ export class KliraTracing {
    */
   traceCheckOutput<T>(
     fn: () => Promise<T>,
-    result: GuardrailResult,
     outputLength: number,
     conversationId?: string
   ): Promise<T> {
@@ -428,12 +449,7 @@ export class KliraTracing {
         'klira.instrumented': true,
         'compliance.direction': 'outbound',
         'klira.direction': 'outbound', // Platform-compatible direction
-        'compliance.decision.allowed': result.allowed,
-        'compliance.decision.action': result.blocked ? 'block' : 'allow',
-        'compliance.decision.confidence': 1.0,
-        'compliance.input_length': outputLength,
-        'compliance.evaluation.method': this.determineEvaluationMethod(result),
-        'compliance.decision.layer': this.determineDecisionLayer(result),
+        'compliance.output_length': outputLength,
         'klira.component': 'guardrails', // Component identifier
         'klira.operation': 'check_output', // Operation identifier
       },
@@ -448,27 +464,44 @@ export class KliraTracing {
 
     return context.with(trace.setSpan(context.active(), span), async () => {
       try {
-        const fnResult = await fn();
+        // Execute function ONCE inside the span
+        const result = await fn();
 
         // Calculate duration
         const endTime = process.hrtime.bigint();
         const durationNs = Number(endTime - startTime);
         const durationMs = durationNs / 1_000_000;
 
-        // Add duration attributes
-        span.setAttribute('klira.duration_ms', durationMs);
-        span.setAttribute('duration_ms', durationMs); // Platform-compatible attribute
+        // Cast result to GuardrailResult for type safety
+        const guardrailResult = result as unknown as GuardrailResult;
 
-        // Add decision layer attributes
+        // Add result-dependent attributes after execution
         span.setAttributes({
-          'decision.layer': this.determineDecisionLayer(result),
-          'decision.allowed': result.allowed,
-          'decision.confidence': this.calculateDecisionConfidence(result),
+          'klira.duration_ms': durationMs,
+          'duration_ms': durationMs, // Platform-compatible attribute
+          'compliance.decision.allowed': guardrailResult.allowed,
+          'compliance.decision.action': guardrailResult.blocked ? 'block' : 'allow',
+          'compliance.decision.confidence': this.calculateDecisionConfidence(guardrailResult),
+          'compliance.evaluation.method': this.determineEvaluationMethod(guardrailResult),
+          'compliance.decision.layer': this.determineDecisionLayer(guardrailResult),
+          'decision.layer': this.determineDecisionLayer(guardrailResult),
+          'decision.allowed': guardrailResult.allowed,
+          'decision.confidence': this.calculateDecisionConfidence(guardrailResult),
+          'compliance.guardrails.triggered': guardrailResult.triggeredPolicies?.length ?? 0,
+          'compliance.guardrails.policies': guardrailResult.triggeredPolicies?.join(',') ?? '',
         });
 
         span.setStatus({ code: SpanStatusCode.OK });
-        return fnResult;
+        return result;
       } catch (error) {
+        const endTime = process.hrtime.bigint();
+        const durationMs = Number(endTime - startTime) / 1_000_000;
+
+        span.setAttributes({
+          'klira.duration_ms': durationMs,
+          'error': true,
+        });
+
         span.recordException(error as Error);
         span.setStatus({
           code: SpanStatusCode.ERROR,
