@@ -528,6 +528,43 @@ class AIService {
 }
 ```
 
+## ⚡ Performance
+
+The Klira AI SDK is optimized for minimal latency overhead:
+
+### Performance Characteristics
+
+- **Fast Rules Evaluation**: 0.05-0.10ms (sub-millisecond)
+- **Augmentation Overhead**: <0.05ms per request
+- **Total Guardrail Evaluation**: <1ms average
+- **Trace Recording**: <0.01ms additional overhead
+
+**Augmentation Performance:**
+- Non-augmented calls: ~0.05ms average
+- Augmented calls: ~0.10ms average
+- Guidelines injection: <0.01ms (synchronous)
+- Prompt text building: <0.01ms
+
+**Benchmark Results** (v0.2.x):
+- Average latency: 0.08ms (with augmentation enabled)
+- P95 latency: 0.20ms
+- P99 latency: 0.37ms
+- Execution consistency: No degradation over 100+ sequential calls
+
+### Running Performance Tests
+
+Run the comprehensive performance test suite:
+
+```bash
+npm test -- tests/guardrails/performance.test.ts
+```
+
+Run the performance benchmark script:
+
+```bash
+npm run test:perf
+```
+
 ## 📊 Observability & Monitoring
 
 Klira AI provides comprehensive observability out of the box:

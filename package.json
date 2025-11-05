@@ -57,6 +57,7 @@
     "example:real-providers": "tsx examples/real-providers-demo.ts",
     "example:performance": "tsx examples/performance-comparison.ts",
     "example:simple-perf": "tsx examples/simple-performance-test.ts",
+    "test:perf": "tsx scripts/test-performance.ts",
     "build:analyze": "NODE_ENV=production npm run build && npm run size",
     "build:prod": "NODE_ENV=production npm run build",
     "size": "size-limit",
