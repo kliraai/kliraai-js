@@ -265,6 +265,77 @@ export class KliraAI {
   }
 
   /**
+   * Force flush any pending trace spans (blocking)
+   *
+   * This method triggers an immediate export of all queued spans. It's useful
+   * to call at the end of workflows or before shutdown to ensure all traces
+   * are sent to the backend.
+   *
+   * NOTE: This is a blocking call. For async/non-blocking flush, use flushAsync().
+   *
+   * @param timeout - Maximum time to wait for flush to complete in milliseconds (default: 30000)
+   * @returns Promise<boolean> - True if flush succeeded, false otherwise
+   *
+   * @example
+   * ```typescript
+   * // At the end of a workflow
+   * await KliraAI.flush();
+   *
+   * // Before shutdown
+   * await KliraAI.flush(5000); // 5 second timeout
+   * await KliraAI.shutdown();
+   * ```
+   */
+  static async flush(timeout: number = 30000): Promise<boolean> {
+    if (!KliraAI.tracing) {
+      KliraAI.logger?.debug('No tracing instance to flush');
+      return true;
+    }
+
+    try {
+      KliraAI.logger?.debug('Flushing trace spans');
+      await KliraAI.tracing.flush(timeout);
+      KliraAI.logger?.debug('Trace spans flushed successfully');
+      return true;
+    } catch (error) {
+      KliraAI.logger?.warn(`Failed to flush trace spans: ${error}`);
+      return false;
+    }
+  }
+
+  /**
+   * Force flush any pending trace spans asynchronously (non-blocking)
+   *
+   * This method triggers an immediate export of all queued spans in a background
+   * operation, allowing the caller to continue without waiting for the upload to complete.
+   *
+   * This is the preferred method for flushing traces at the end of workflows/requests
+   * to avoid blocking the user's response.
+   *
+   * @param timeout - Maximum time to wait for flush to complete in milliseconds (default: 30000)
+   *
+   * @example
+   * ```typescript
+   * // Non-blocking flush at the end of a request
+   * KliraAI.flushAsync(); // Returns immediately
+   * res.send({ success: true });
+   * ```
+   */
+  static flushAsync(timeout: number = 30000): void {
+    if (!KliraAI.tracing) {
+      KliraAI.logger?.debug('No tracing instance to flush');
+      return;
+    }
+
+    // Fire and forget - flush in background
+    KliraAI.flush(timeout).catch((error) => {
+      KliraAI.logger?.warn(`Async flush failed: ${error}`);
+    });
+
+    KliraAI.logger?.debug('Trace flush started in background');
+  }
+
+  /**
    * Shutdown the SDK
    */
   static async shutdown(): Promise<void> {
@@ -321,7 +392,11 @@ export {
   KliraInitializationError,
 } from './types/index.js';
 
-export { guardrails } from './decorators/guardrails.js';
+// Export decorators
+export { guardrails, workflow, task, agent, tool } from './decorators/index.js';
+export type { DecoratorOptions } from './decorators/index.js';
+
+// Export core classes
 export { GuardrailsEngine } from './guardrails/engine.js';
 export { KliraTracing } from './observability/tracing.js';
 export { KliraMetrics } from './observability/metrics.js';

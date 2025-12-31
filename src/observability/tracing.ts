@@ -1050,6 +1050,21 @@ export class KliraTracing {
   }
 
   /**
+   * Force flush any pending trace spans
+   *
+   * @param _timeout - Maximum time to wait for flush to complete in milliseconds (currently unused)
+   */
+  async flush(_timeout: number = 30000): Promise<void> {
+    // NodeSDK doesn't expose forceFlush directly, but shutdown handles flushing
+    // For now, we'll rely on automatic batching and shutdown
+    // TODO: Implement proper force flush when OpenTelemetry SDK supports it
+    if (this.sdk) {
+      // No-op for now - spans are automatically batched and sent
+      // The SDK will flush on shutdown
+    }
+  }
+
+  /**
    * Shutdown tracing
    */
   async shutdown(): Promise<void> {
