@@ -15,8 +15,32 @@ export interface KliraConfig {
   debugMode?: boolean;
   environment?: string;
 
+  // Evaluation system settings (Phase 3)
+  evalsRun?: string; // Eval run ID (routes traces to /evals/v1/traces when set)
+
+  // Tracing and metrics settings
+  traceContent?: boolean; // Whether to trace message content (default: true)
+  metricsEnabled?: boolean; // Enable metrics collection (default: true)
+  loggingEnabled?: boolean; // Enable SDK logging (default: false)
+
   // Top-level guardrails options (for backward compatibility)
   llmFallbackEnabled?: boolean;
+
+  // LLM Fallback configuration (for complex guardrail decisions)
+  llmFallbackProvider?: 'openai' | 'anthropic'; // LLM provider for fallback
+  llmFallbackModel?: string; // Model name (e.g., 'gpt-4', 'claude-3-opus-20240229')
+  llmFallbackApiKey?: string; // API key for the LLM provider
+
+  // Fuzzy matching configuration
+  fuzzySimilarityThreshold?: number; // Similarity threshold for fuzzy matching (0-100, default: 85)
+
+  // Remote policy loading
+  useRemotePolicies?: boolean; // Fetch policies from Klira API (default: true)
+
+  // Prompt logging configuration
+  logPrompts?: boolean; // Log prompts and responses (default: true)
+  promptTruncationLimit?: number; // Max chars to log for prompts (default: 15000)
+  responseTruncationLimit?: number; // Max chars to log for responses (default: 1000)
 
   // Guardrails configuration options
   guardrails?: {

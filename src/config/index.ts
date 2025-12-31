@@ -35,8 +35,32 @@ const KliraConfigSchema = z.object({
   debugMode: z.boolean().default(false),
   environment: z.string().default('development'),
 
+  // Evaluation system settings
+  evalsRun: z.string().optional(),
+
+  // Tracing and metrics settings
+  traceContent: z.boolean().default(true),
+  metricsEnabled: z.boolean().default(true),
+  loggingEnabled: z.boolean().default(false),
+
   // Top-level guardrails options (for backward compatibility)
   llmFallbackEnabled: z.boolean().optional(),
+
+  // LLM Fallback configuration
+  llmFallbackProvider: z.enum(['openai', 'anthropic']).optional(),
+  llmFallbackModel: z.string().optional(),
+  llmFallbackApiKey: z.string().optional(),
+
+  // Fuzzy matching configuration
+  fuzzySimilarityThreshold: z.number().min(0).max(100).default(85),
+
+  // Remote policy loading
+  useRemotePolicies: z.boolean().default(true),
+
+  // Prompt logging configuration
+  logPrompts: z.boolean().default(true),
+  promptTruncationLimit: z.number().min(0).default(15000),
+  responseTruncationLimit: z.number().min(0).default(1000),
 
   // Guardrails configuration
   guardrails: z.object({
@@ -68,6 +92,36 @@ export function createConfig(overrides: Partial<KliraConfig> = {}): KliraConfig 
     verbose: process.env.KLIRA_VERBOSE ? process.env.KLIRA_VERBOSE === 'true' : undefined,
     debugMode: process.env.KLIRA_DEBUG ? process.env.KLIRA_DEBUG === 'true' : undefined,
     environment: process.env.NODE_ENV || process.env.KLIRA_ENVIRONMENT,
+
+    // Evaluation system settings
+    evalsRun: process.env.KLIRA_EVALS_RUN,
+
+    // Tracing and metrics settings
+    traceContent: process.env.KLIRA_TRACE_CONTENT ? process.env.KLIRA_TRACE_CONTENT === 'true' : undefined,
+    metricsEnabled: process.env.KLIRA_METRICS_ENABLED ? process.env.KLIRA_METRICS_ENABLED === 'true' : undefined,
+    loggingEnabled: process.env.KLIRA_LOGGING_ENABLED ? process.env.KLIRA_LOGGING_ENABLED === 'true' : undefined,
+
+    // LLM Fallback configuration
+    llmFallbackProvider: process.env.KLIRA_LLM_FALLBACK_PROVIDER as 'openai' | 'anthropic' | undefined,
+    llmFallbackModel: process.env.KLIRA_LLM_FALLBACK_MODEL,
+    llmFallbackApiKey: process.env.KLIRA_LLM_FALLBACK_API_KEY,
+
+    // Fuzzy matching configuration
+    fuzzySimilarityThreshold: process.env.KLIRA_FUZZY_SIMILARITY_THRESHOLD
+      ? parseFloat(process.env.KLIRA_FUZZY_SIMILARITY_THRESHOLD)
+      : undefined,
+
+    // Remote policy loading
+    useRemotePolicies: process.env.KLIRA_USE_REMOTE_POLICIES ? process.env.KLIRA_USE_REMOTE_POLICIES === 'true' : undefined,
+
+    // Prompt logging configuration
+    logPrompts: process.env.KLIRA_LOG_PROMPTS ? process.env.KLIRA_LOG_PROMPTS === 'true' : undefined,
+    promptTruncationLimit: process.env.KLIRA_PROMPT_TRUNCATION_LIMIT
+      ? parseInt(process.env.KLIRA_PROMPT_TRUNCATION_LIMIT, 10)
+      : undefined,
+    responseTruncationLimit: process.env.KLIRA_RESPONSE_TRUNCATION_LIMIT
+      ? parseInt(process.env.KLIRA_RESPONSE_TRUNCATION_LIMIT, 10)
+      : undefined,
   };
 
   // Remove undefined values
