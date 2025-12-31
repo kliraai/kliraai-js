@@ -79,12 +79,13 @@ function validateUserId(decoratorType: DecoratorType, functionName: string, opti
 }
 
 /**
- * Add Klira-specific context attributes to the current OpenTelemetry context
+ * Create a modified context with Klira-specific attributes
+ * Returns the modified context to be used with otelContext.with()
  */
-function addKliraContext(decoratorType: DecoratorType, options: DecoratorOptions): void {
+function createKliraContext(decoratorType: DecoratorType, options: DecoratorOptions): any {
   let ctx = otelContext.active();
 
-  // Add hierarchy context attributes
+  // Add hierarchy context attributes using proper context API
   if (options.organizationId) {
     ctx = ctx.setValue(Symbol.for('klira.organization_id'), options.organizationId);
   }
@@ -110,7 +111,7 @@ function addKliraContext(decoratorType: DecoratorType, options: DecoratorOptions
   // Add entity type
   ctx = ctx.setValue(Symbol.for('klira.entity_type'), decoratorType);
 
-  otelContext.setGlobalContextManager(ctx as any);
+  return ctx;
 }
 
 /**
@@ -121,19 +122,25 @@ function createDecoratorSpan(
   functionName: string,
   options: DecoratorOptions
 ): Span {
-  const tracer = trace.getTracer(`klira.${decoratorType}`);
-  const spanName = options.name || functionName;
+  // CRITICAL: Use "klira" tracer name to match Python SDK
+  const tracer = trace.getTracer('klira');
+
+  // CRITICAL: Use "klira.{type}.{name}" pattern to match Python SDK
+  const entityName = options.name || functionName;
+  const spanName = `klira.${decoratorType}.${entityName}`;
 
   const attributes: Record<string, any> = {
+    // CRITICAL: Must set both entity_type and entity_name to match Python SDK
     'klira.entity_type': decoratorType,
+    'klira.entity_name': entityName,
   };
 
   // Add version if provided
   if (options.version !== undefined) {
-    attributes[`${decoratorType}.version`] = options.version;
+    attributes[`klira.${decoratorType}.version`] = options.version;
   }
 
-  // Add hierarchy context
+  // Add hierarchy context attributes
   if (options.organizationId) attributes['klira.organization_id'] = options.organizationId;
   if (options.projectId) attributes['klira.project_id'] = options.projectId;
   if (options.agentId) attributes['klira.agent_id'] = options.agentId;
@@ -142,7 +149,7 @@ function createDecoratorSpan(
   if (options.conversationId) attributes['klira.conversation_id'] = options.conversationId;
   if (options.userId) attributes['klira.user_id'] = options.userId;
 
-  // Create span
+  // Create span with INTERNAL kind
   const span = tracer.startSpan(spanName, {
     kind: SpanKind.INTERNAL,
     attributes,
@@ -173,49 +180,52 @@ export function createDecorator(decoratorType: DecoratorType) {
         // Validate userId before execution
         validateUserId(decoratorType, functionName, options);
 
-        // Add Klira context
-        addKliraContext(decoratorType, options);
+        // Create modified context with Klira attributes
+        const kliraContext = createKliraContext(decoratorType, options);
 
-        // Create span
-        const span = createDecoratorSpan(decoratorType, functionName, options);
+        // Execute in Klira context
+        return otelContext.with(kliraContext, () => {
+          // Create span with Klira attributes
+          const span = createDecoratorSpan(decoratorType, functionName, options);
 
-        // Execute function in span context
-        return otelContext.with(trace.setSpan(otelContext.active(), span), () => {
-          try {
-            const result = originalMethod.apply(this, args);
+          // Execute function in span context
+          return otelContext.with(trace.setSpan(otelContext.active(), span), () => {
+            try {
+              const result = originalMethod.apply(this, args);
 
-            // Handle async results
-            if (result && typeof result.then === 'function') {
-              return result
-                .then((value: any) => {
-                  span.setStatus({ code: SpanStatusCode.OK });
-                  span.end();
-                  return value;
-                })
-                .catch((error: any) => {
-                  span.setStatus({
-                    code: SpanStatusCode.ERROR,
-                    message: error.message || String(error),
+              // Handle async results
+              if (result && typeof result.then === 'function') {
+                return result
+                  .then((value: any) => {
+                    span.setStatus({ code: SpanStatusCode.OK });
+                    span.end();
+                    return value;
+                  })
+                  .catch((error: any) => {
+                    span.setStatus({
+                      code: SpanStatusCode.ERROR,
+                      message: error.message || String(error),
+                    });
+                    span.recordException(error);
+                    span.end();
+                    throw error;
                   });
-                  span.recordException(error);
-                  span.end();
-                  throw error;
-                });
-            } else {
-              // Sync result
-              span.setStatus({ code: SpanStatusCode.OK });
+              } else {
+                // Sync result
+                span.setStatus({ code: SpanStatusCode.OK });
+                span.end();
+                return result;
+              }
+            } catch (error: any) {
+              span.setStatus({
+                code: SpanStatusCode.ERROR,
+                message: error.message || String(error),
+              });
+              span.recordException(error);
               span.end();
-              return result;
+              throw error;
             }
-          } catch (error: any) {
-            span.setStatus({
-              code: SpanStatusCode.ERROR,
-              message: error.message || String(error),
-            });
-            span.recordException(error);
-            span.end();
-            throw error;
-          }
+          });
         });
       } as T;
 
