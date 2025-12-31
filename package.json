@@ -31,6 +31,11 @@
       "types": "./dist/adapters/custom/index.d.ts",
       "import": "./dist/adapters/custom/index.mjs",
       "require": "./dist/adapters/custom/index.js"
+    },
+    "./evals": {
+      "types": "./dist/evals/index.d.ts",
+      "import": "./dist/evals/index.mjs",
+      "require": "./dist/evals/index.js"
     }
   },
   "files": [

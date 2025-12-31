@@ -7,6 +7,7 @@ export default defineConfig({
     'adapters/langchain/index': 'src/adapters/langchain/index.ts',
     'adapters/openai/index': 'src/adapters/openai/index.ts',
     'adapters/custom/index': 'src/adapters/custom/index.ts',
+    'evals/index': 'src/evals/index.ts',
   },
   format: ['cjs', 'esm'],
   dts: true,
