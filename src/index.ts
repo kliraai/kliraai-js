@@ -400,6 +400,10 @@ export type { DecoratorOptions } from './decorators/index.js';
 export { GuardrailsEngine } from './guardrails/engine.js';
 export { KliraTracing } from './observability/tracing.js';
 export { KliraMetrics } from './observability/metrics.js';
+export {
+  UserMessageTraceContext,
+  startUserMessageTrace,
+} from './observability/user-message-context.js';
 
 // Default export
 export default KliraAI;
