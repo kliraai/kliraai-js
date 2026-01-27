@@ -9,6 +9,7 @@ import { evaluate } from '../../evals/runner.js';
 import { KliraAI } from '../../index.js';
 import { GuardrailsEngine } from '../../guardrails/engine.js';
 import type { TestCase } from '../../evals/types.js';
+import type { DatasetAPIResponse } from '../../evals/dataset-http-client.js';
 
 describe('Evaluation Runner', () => {
   const tempDir = path.join(process.cwd(), 'temp-test-evals');
@@ -88,7 +89,7 @@ describe('Evaluation Runner', () => {
 
       expect(result.totalTestCases).toBe(2);
       expect(result.passRate).toBe(1.0);
-      expect(result.datasetPath).toBe(csvPath);
+      expect(result.datasetPath).toBe(`local:${csvPath}`);
     });
 
     it('should run evaluation with JSON dataset', async () => {
@@ -222,7 +223,7 @@ describe('Evaluation Runner', () => {
           target: async () => 'output',
           data: undefined as any,
         })
-      ).rejects.toThrow('data is required');
+      ).rejects.toThrow('No dataset provided');
     });
 
     it('should throw error when dataset is empty', async () => {
@@ -382,6 +383,244 @@ describe('Evaluation Runner', () => {
       expect(flushSpy).toHaveBeenCalled();
 
       flushSpy.mockRestore();
+    });
+  });
+
+  describe('Remote Dataset Integration', () => {
+    it('should prioritize remote dataset over local file', async () => {
+      // Reinitialize with datasetId config
+      (KliraAI as any).initialized = false;
+      await KliraAI.init({
+        appName: 'test-remote-dataset',
+        apiKey: 'klira_test_api_key_12345',
+        datasetId: 'ds_remote_123',
+      });
+
+      const mockResponse: DatasetAPIResponse = {
+        dataset: { id: 'ds_remote_123', status: 'ready' },
+        items: [
+          {
+            id: 'remote_item_1',
+            messages: [{ role: 'user', content: 'Remote test input' }],
+            metadata: { expected_output: 'Remote output' },
+          },
+        ],
+        fetched_at: '2026-01-26T12:00:00Z',
+      };
+
+      global.fetch = vi.fn().mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockResponse,
+      });
+
+      const target = vi.fn(async () => 'Remote output');
+
+      const result = await evaluate({
+        target,
+        // Note: local data is provided but should be ignored
+        data: [{ id: 'local_item', input: 'Local input' }],
+      });
+
+      expect(result.datasetPath).toBe('remote:ds_remote_123');
+      expect(result.totalTestCases).toBe(1);
+      expect(target).toHaveBeenCalledWith('Remote test input');
+      expect(fetch).toHaveBeenCalled();
+
+      vi.restoreAllMocks();
+    });
+
+    it('should fall back to local when no datasetId configured', async () => {
+      // Reinitialize without datasetId
+      (KliraAI as any).initialized = false;
+      await KliraAI.init({
+        appName: 'test-local-fallback',
+        apiKey: 'klira_test_api_key_12345',
+      });
+
+      const testCases: TestCase[] = [{ id: 'local_1', input: 'Local test' }];
+      const target = async () => 'output';
+
+      const result = await evaluate({
+        target,
+        data: testCases,
+      });
+
+      expect(result.datasetPath).toBe('in-memory');
+      expect(result.totalTestCases).toBe(1);
+    });
+
+    it('should throw error when datasetId set without apiKey', async () => {
+      // Reinitialize with datasetId but no apiKey
+      (KliraAI as any).initialized = false;
+      await KliraAI.init({
+        appName: 'test-no-apikey',
+        datasetId: 'ds_123',
+      });
+
+      const target = async () => 'output';
+
+      await expect(
+        evaluate({
+          target,
+        })
+      ).rejects.toThrow('API key required for remote dataset fetching');
+    });
+
+    it('should include remote source in result', async () => {
+      // Reinitialize with datasetId config
+      (KliraAI as any).initialized = false;
+      await KliraAI.init({
+        appName: 'test-source-info',
+        apiKey: 'klira_test_api_key_12345',
+        datasetId: 'ds_my_dataset',
+      });
+
+      const mockResponse: DatasetAPIResponse = {
+        dataset: { id: 'ds_my_dataset', status: 'ready' },
+        items: [
+          {
+            id: 'item_1',
+            messages: [{ role: 'user', content: 'Test' }],
+          },
+        ],
+        fetched_at: '2026-01-26T12:00:00Z',
+      };
+
+      global.fetch = vi.fn().mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockResponse,
+      });
+
+      const target = async () => 'output';
+
+      const result = await evaluate({
+        target,
+      });
+
+      expect(result.datasetPath).toBe('remote:ds_my_dataset');
+
+      vi.restoreAllMocks();
+    });
+
+    it('should throw error when no dataset provided and no datasetId configured', async () => {
+      // Reinitialize without datasetId
+      (KliraAI as any).initialized = false;
+      await KliraAI.init({
+        appName: 'test-no-dataset',
+      });
+
+      const target = async () => 'output';
+
+      await expect(
+        evaluate({
+          target,
+        })
+      ).rejects.toThrow(
+        'No dataset provided: set datasetId in config or pass data parameter'
+      );
+    });
+
+    it('should use local file path in source when provided', async () => {
+      const csvPath = path.join(tempDir, 'local-dataset.csv');
+      await fs.writeFile(csvPath, 'input\n"Test input"');
+
+      const target = async () => 'output';
+
+      const result = await evaluate({
+        target,
+        data: csvPath,
+      });
+
+      expect(result.datasetPath).toBe(`local:${csvPath}`);
+    });
+
+    it('should use custom dataset API URL when configured', async () => {
+      const customUrl = 'https://custom.api.example.com/datasets';
+
+      // Reinitialize with custom URL
+      (KliraAI as any).initialized = false;
+      await KliraAI.init({
+        appName: 'test-custom-url',
+        apiKey: 'klira_test_api_key_12345',
+        datasetId: 'ds_custom',
+        datasetApiUrl: customUrl,
+      });
+
+      const mockResponse: DatasetAPIResponse = {
+        dataset: { id: 'ds_custom', status: 'ready' },
+        items: [
+          {
+            id: 'item_1',
+            messages: [{ role: 'user', content: 'Test' }],
+          },
+        ],
+        fetched_at: '2026-01-26T12:00:00Z',
+      };
+
+      global.fetch = vi.fn().mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockResponse,
+      });
+
+      const target = async () => 'output';
+
+      await evaluate({ target });
+
+      expect(fetch).toHaveBeenCalledWith(
+        `${customUrl}/ds_custom`,
+        expect.any(Object)
+      );
+
+      vi.restoreAllMocks();
+    });
+
+    it('should handle expectedGuardrailDecision from remote dataset', async () => {
+      // Reinitialize with datasetId config
+      (KliraAI as any).initialized = false;
+      await KliraAI.init({
+        appName: 'test-guardrail-decision',
+        apiKey: 'klira_test_api_key_12345',
+        datasetId: 'ds_guardrail_test',
+      });
+
+      const mockResponse: DatasetAPIResponse = {
+        dataset: { id: 'ds_guardrail_test', status: 'ready' },
+        items: [
+          {
+            id: 'item_1',
+            messages: [{ role: 'user', content: 'Safe content' }],
+            metadata: {
+              expected_guardrail_decision: 'ALLOW',
+            },
+          },
+          {
+            id: 'item_2',
+            messages: [{ role: 'user', content: 'Harmful content' }],
+            metadata: {
+              expected_guardrail_decision: 'BLOCK',
+            },
+          },
+        ],
+        fetched_at: '2026-01-26T12:00:00Z',
+      };
+
+      global.fetch = vi.fn().mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockResponse,
+      });
+
+      const target = async () => 'output';
+
+      const result = await evaluate({ target });
+
+      expect(result.totalTestCases).toBe(2);
+      // The test cases are executed successfully with the guardrail decision metadata
+
+      vi.restoreAllMocks();
     });
   });
 

@@ -5,8 +5,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { loadDataset } from '../../evals/dataset-loader.js';
+import { loadDataset, loadFromApi } from '../../evals/dataset-loader.js';
 import type { TestCase } from '../../evals/types.js';
+import type { DatasetItem } from '../../evals/dataset-http-client.js';
 
 describe('Dataset Loader', () => {
   const tempDir = path.join(process.cwd(), 'temp-test-datasets');
@@ -238,6 +239,162 @@ test_2,"Second test","Second response"`;
       const result = await loadDataset(jsonPath, { format: 'json' });
 
       expect(result).toHaveLength(1);
+    });
+  });
+
+  describe('loadFromApi()', () => {
+    it('extracts user message from messages array', () => {
+      const items: DatasetItem[] = [
+        {
+          id: 'item_1',
+          messages: [
+            { role: 'system', content: 'You are helpful' },
+            { role: 'user', content: 'Hello world' },
+          ],
+          metadata: {
+            expected_output: 'Hi there',
+          },
+        },
+      ];
+
+      const result = loadFromApi(items);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('item_1');
+      expect(result[0].input).toBe('Hello world');
+      expect(result[0].expectedOutput).toBe('Hi there');
+    });
+
+    it('maps metadata fields correctly', () => {
+      const items: DatasetItem[] = [
+        {
+          id: 'item_1',
+          messages: [{ role: 'user', content: 'Test input' }],
+          metadata: {
+            expected_output: 'Expected response',
+            expected_guardrail_decision: 'ALLOW',
+            category: 'safety',
+            custom_field: 'custom_value',
+          },
+        },
+      ];
+
+      const result = loadFromApi(items);
+
+      expect(result[0].expectedOutput).toBe('Expected response');
+      expect(result[0].expectedGuardrailDecision).toBe('ALLOW');
+      expect(result[0].metadata?.category).toBe('safety');
+      expect(result[0].metadata?.custom_field).toBe('custom_value');
+    });
+
+    it('throws error when no user message found', () => {
+      const items: DatasetItem[] = [
+        {
+          id: 'item_1',
+          messages: [{ role: 'assistant', content: 'Response only' }],
+        },
+      ];
+
+      expect(() => loadFromApi(items)).toThrow('Item 0: no user message found');
+    });
+
+    it('throws error when messages array is empty', () => {
+      const items: DatasetItem[] = [
+        {
+          id: 'item_1',
+          messages: [],
+        },
+      ];
+
+      expect(() => loadFromApi(items)).toThrow('Item 0: no user message found');
+    });
+
+    it('handles empty metadata', () => {
+      const items: DatasetItem[] = [
+        {
+          id: 'item_1',
+          messages: [{ role: 'user', content: 'Test' }],
+        },
+      ];
+
+      const result = loadFromApi(items);
+
+      expect(result[0].expectedOutput).toBeUndefined();
+      expect(result[0].expectedGuardrailDecision).toBeUndefined();
+      expect(result[0].metadata).toEqual({
+        category: undefined,
+      });
+    });
+
+    it('preserves custom metadata fields', () => {
+      const items: DatasetItem[] = [
+        {
+          id: 'item_1',
+          messages: [{ role: 'user', content: 'Test' }],
+          metadata: {
+            custom1: 'value1',
+            custom2: 123,
+            nested: { key: 'value' },
+          },
+        },
+      ];
+
+      const result = loadFromApi(items);
+
+      expect(result[0].metadata?.custom1).toBe('value1');
+      expect(result[0].metadata?.custom2).toBe(123);
+      expect(result[0].metadata?.nested).toEqual({ key: 'value' });
+    });
+
+    it('generates IDs when not provided', () => {
+      const items: DatasetItem[] = [
+        {
+          id: '',
+          messages: [{ role: 'user', content: 'Test 1' }],
+        },
+        {
+          id: '',
+          messages: [{ role: 'user', content: 'Test 2' }],
+        },
+      ];
+
+      const result = loadFromApi(items);
+
+      expect(result[0].id).toBe('test_0');
+      expect(result[1].id).toBe('test_1');
+    });
+
+    it('handles multiple user messages by using first one', () => {
+      const items: DatasetItem[] = [
+        {
+          id: 'item_1',
+          messages: [
+            { role: 'user', content: 'First message' },
+            { role: 'assistant', content: 'Response' },
+            { role: 'user', content: 'Second message' },
+          ],
+        },
+      ];
+
+      const result = loadFromApi(items);
+
+      expect(result[0].input).toBe('First message');
+    });
+
+    it('handles BLOCK guardrail decision', () => {
+      const items: DatasetItem[] = [
+        {
+          id: 'item_1',
+          messages: [{ role: 'user', content: 'Harmful content' }],
+          metadata: {
+            expected_guardrail_decision: 'BLOCK',
+          },
+        },
+      ];
+
+      const result = loadFromApi(items);
+
+      expect(result[0].expectedGuardrailDecision).toBe('BLOCK');
     });
   });
 });

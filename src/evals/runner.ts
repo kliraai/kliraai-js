@@ -6,12 +6,74 @@
  */
 
 import { KliraAI } from '../index.js';
-import { loadDataset } from './dataset-loader.js';
+import type { KliraConfig } from '../types/index.js';
+import { loadDataset, loadFromApi } from './dataset-loader.js';
+import { DatasetHTTPClient } from './dataset-http-client.js';
 import type {
   EvaluateOptions,
   KliraEvalResult,
+  TestCase,
   TestCaseResult,
 } from './types.js';
+
+/**
+ * Dataset source information
+ */
+interface DatasetSource {
+  testCases: TestCase[];
+  source: string; // 'remote:ds_123' or 'local:/path/to/file.csv' or 'in-memory'
+}
+
+/**
+ * Resolve dataset based on priority: remote > local
+ *
+ * Priority order:
+ * 1. Remote dataset via config.datasetId (Python SDK parity)
+ * 2. Local file or in-memory array passed to evaluate()
+ *
+ * @param data - Optional local data (file path or array)
+ * @param config - SDK configuration
+ * @returns Dataset source with test cases and source info
+ */
+async function resolveDataset(
+  data?: string | TestCase[],
+  config?: KliraConfig
+): Promise<DatasetSource> {
+  // Priority 1: Remote dataset via config.datasetId
+  if (config?.datasetId) {
+    if (!config.apiKey) {
+      throw new Error('API key required for remote dataset fetching');
+    }
+
+    const client = new DatasetHTTPClient({
+      apiKey: config.apiKey,
+      apiUrl: config.datasetApiUrl,
+      timeout: config.datasetFetchTimeout,
+      retries: config.datasetFetchRetries,
+    });
+
+    const items = await client.fetchDatasetItems(config.datasetId);
+    const testCases = loadFromApi(items);
+
+    return {
+      testCases,
+      source: `remote:${config.datasetId}`,
+    };
+  }
+
+  // Priority 2: Local file or in-memory array
+  if (data !== undefined) {
+    const testCases = await loadDataset(data);
+    const source =
+      typeof data === 'string' ? `local:${data}` : 'in-memory';
+
+    return { testCases, source };
+  }
+
+  throw new Error(
+    'No dataset provided: set datasetId in config or pass data parameter'
+  );
+}
 
 /**
  * Evaluate an AI system with test cases
@@ -66,12 +128,13 @@ export async function evaluate(
   if (!options.target) {
     throw new Error('target function is required');
   }
-  if (!options.data) {
-    throw new Error('data is required');
-  }
 
-  // Load dataset
-  const testCases = await loadDataset(options.data);
+  // Get SDK config for remote dataset support
+  const config = KliraAI.getConfig();
+
+  // Resolve dataset with priority logic (remote > local)
+  // data is optional if datasetId is set in config
+  const { testCases, source } = await resolveDataset(options.data, config);
 
   if (testCases.length === 0) {
     throw new Error('No test cases found in dataset');
@@ -156,7 +219,7 @@ export async function evaluate(
   // Construct result
   const result: KliraEvalResult = {
     totalTestCases: testCases.length,
-    datasetPath: typeof options.data === 'string' ? options.data : undefined,
+    datasetPath: source, // Now includes remote source info (e.g., 'remote:ds_123')
     testCases: results,
     evalsRun: options.evalsRun,
     createdAt: new Date(startTime),

@@ -23,7 +23,16 @@
  */
 
 export { evaluate } from './runner.js';
-export { loadDataset } from './dataset-loader.js';
+export { loadDataset, loadFromApi } from './dataset-loader.js';
+export {
+  DatasetHTTPClient,
+  DEFAULT_DATASET_API_URL,
+} from './dataset-http-client.js';
+export type {
+  DatasetAPIResponse,
+  DatasetItem,
+  DatasetHTTPClientOptions,
+} from './dataset-http-client.js';
 export type {
   KliraEvalResult,
   ComplianceReport,

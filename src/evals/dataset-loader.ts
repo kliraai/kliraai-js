@@ -1,12 +1,13 @@
 /**
  * Dataset loader for evaluation test cases
  *
- * Supports loading from CSV, JSON files, or in-memory arrays
+ * Supports loading from CSV, JSON files, in-memory arrays, or remote API
  */
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import type { TestCase, DatasetLoaderOptions } from './types.js';
+import type { DatasetItem } from './dataset-http-client.js';
 
 /**
  * Load test cases from various formats
@@ -134,4 +135,43 @@ function parseCSVLine(line: string): string[] {
 
   result.push(current.trim());
   return result.map((val) => val.replace(/^"|"$/g, '')); // Remove surrounding quotes
+}
+
+/**
+ * Convert API dataset items to TestCase format
+ *
+ * API items use messages format:
+ *   { "id": "uuid", "messages": [{"role": "user", "content": "..."}], "metadata": {...} }
+ *
+ * @param items - Array of DatasetItem from the API
+ * @returns Array of TestCase for evaluation
+ */
+export function loadFromApi(items: DatasetItem[]): TestCase[] {
+  const testCases: TestCase[] = [];
+
+  for (let idx = 0; idx < items.length; idx++) {
+    const item = items[idx]!;
+    const messages = item.messages || [];
+
+    // Extract user message content
+    const userMessage = messages.find((m) => m.role === 'user');
+    if (!userMessage?.content) {
+      throw new Error(`Item ${idx}: no user message found`);
+    }
+
+    const metadata = item.metadata || {};
+
+    testCases.push({
+      id: item.id || `test_${idx}`,
+      input: userMessage.content,
+      expectedOutput: metadata.expected_output,
+      expectedGuardrailDecision: metadata.expected_guardrail_decision,
+      metadata: {
+        category: metadata.category,
+        ...metadata,
+      },
+    });
+  }
+
+  return testCases;
 }

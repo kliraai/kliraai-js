@@ -100,7 +100,8 @@ export interface EvaluateOptions {
   target: (input: string) => Promise<string>;
 
   // Dataset (array of test cases or path to CSV/JSON file)
-  data: string | TestCase[];
+  // Optional if datasetId is set in SDK config for remote dataset fetching
+  data?: string | TestCase[];
 
   // Eval run ID (for grouping evaluations)
   evalsRun?: string;
@@ -130,6 +131,7 @@ export interface TestCase {
   id?: string;
   input: string;
   expectedOutput?: string;
+  expectedGuardrailDecision?: 'ALLOW' | 'BLOCK'; // For guardrail compliance testing
   metadata?: Record<string, any>;
 }
 

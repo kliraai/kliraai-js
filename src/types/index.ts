@@ -18,6 +18,12 @@ export interface KliraConfig {
   // Evaluation system settings (Phase 3)
   evalsRun?: string; // Eval run ID (routes traces to /evals/v1/traces when set)
 
+  // Remote dataset configuration for evals (Python SDK parity)
+  datasetId?: string; // Remote dataset ID (e.g., 'ds_123')
+  datasetApiUrl?: string; // API endpoint (default: https://api.getklira.com/v1/evals/datasets)
+  datasetFetchTimeout?: number; // Timeout in ms (default: 10000)
+  datasetFetchRetries?: number; // Retry attempts (default: 3)
+
   // Tracing and metrics settings
   traceContent?: boolean; // Whether to trace message content (default: true)
   metricsEnabled?: boolean; // Enable metrics collection (default: true)

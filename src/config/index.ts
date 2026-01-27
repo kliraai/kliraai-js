@@ -38,6 +38,12 @@ const KliraConfigSchema = z.object({
   // Evaluation system settings
   evalsRun: z.string().optional(),
 
+  // Remote dataset configuration for evals
+  datasetId: z.string().optional(),
+  datasetApiUrl: z.string().url().optional(),
+  datasetFetchTimeout: z.number().min(1000).max(60000).default(10000),
+  datasetFetchRetries: z.number().min(0).max(10).default(3),
+
   // Tracing and metrics settings
   traceContent: z.boolean().default(true),
   metricsEnabled: z.boolean().default(true),
@@ -95,6 +101,16 @@ export function createConfig(overrides: Partial<KliraConfig> = {}): KliraConfig 
 
     // Evaluation system settings
     evalsRun: process.env.KLIRA_EVALS_RUN,
+
+    // Remote dataset configuration
+    datasetId: process.env.KLIRA_DATASET_ID,
+    datasetApiUrl: process.env.KLIRA_DATASET_API_URL,
+    datasetFetchTimeout: process.env.KLIRA_DATASET_FETCH_TIMEOUT
+      ? parseInt(process.env.KLIRA_DATASET_FETCH_TIMEOUT, 10)
+      : undefined,
+    datasetFetchRetries: process.env.KLIRA_DATASET_FETCH_RETRIES
+      ? parseInt(process.env.KLIRA_DATASET_FETCH_RETRIES, 10)
+      : undefined,
 
     // Tracing and metrics settings
     traceContent: process.env.KLIRA_TRACE_CONTENT ? process.env.KLIRA_TRACE_CONTENT === 'true' : undefined,
