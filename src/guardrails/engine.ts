@@ -139,9 +139,9 @@ export class GuardrailsEngine {
         ? 'klira.guardrails.input'
         : 'klira.guardrails.output';
 
-    return tracer.startActiveSpan(spanName, (span: Span) => {
+    return tracer.startActiveSpan(spanName, async (span: Span) => {
       try {
-        return this.runLifecycle(content, direction, span);
+        return await this.runLifecycle(content, direction, span);
       } catch (error) {
         span.setStatus({ code: SpanStatusCode.ERROR, message: String(error) });
         span.end();
@@ -161,8 +161,9 @@ export class GuardrailsEngine {
 
     // 1. IDLE → EVALUATING
     lifecycle.transitionTo(GuardrailState.EVALUATING);
+    const directionAttr = direction === 'inbound' ? 'input' : 'output';
     parentSpan.setAttribute('klira.entity_type', 'guardrails');
-    parentSpan.setAttribute('klira.guardrails.direction', direction);
+    parentSpan.setAttribute('klira.guardrails.direction', directionAttr);
 
     // Run fast rules inside a child span
     const tracer = getTracer();

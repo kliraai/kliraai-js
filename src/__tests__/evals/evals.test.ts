@@ -81,7 +81,7 @@ describe('evaluate()', () => {
     expect(evalSpans.length).toBe(3);
 
     for (const span of evalSpans) {
-      expect(span.attributes['klira.entity_type']).toBe('eval');
+      expect(span.attributes['klira.entity_type']).toBe('eval_test_case');
       expect(span.attributes['klira.evals.dataset_id']).toBe('test-ds');
       expect(span.attributes['klira.evals.dataset_name']).toBe('Test Dataset');
     }

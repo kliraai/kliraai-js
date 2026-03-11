@@ -1,7 +1,8 @@
 /**
  * Klira SDK v2 — FHIR resource tracking.
  *
- * Sets klira.clinical.* attributes on the active span.
+ * Sets klira.healthcare.* and klira.fhir.* attributes on the active span
+ * per trace-schema contract.
  */
 
 import { trace } from '@opentelemetry/api';
@@ -18,13 +19,13 @@ export function setPatientContext(options: {
   if (!span) return;
 
   if (options.patientId) {
-    span.setAttribute('klira.clinical.patient_id', options.patientId);
+    span.setAttribute('klira.healthcare.patient_id', options.patientId);
   }
   if (options.encounterId) {
-    span.setAttribute('klira.clinical.encounter_id', options.encounterId);
+    span.setAttribute('klira.healthcare.encounter_id', options.encounterId);
   }
   if (options.fhirResourceType) {
-    span.setAttribute('klira.clinical.fhir_resource_type', options.fhirResourceType);
+    span.setAttribute('klira.fhir.resource_type', options.fhirResourceType);
   }
 }
 
@@ -40,13 +41,13 @@ export function setClinicalContext(options: {
   if (!span) return;
 
   if (options.department) {
-    span.setAttribute('klira.clinical.department', options.department);
+    span.setAttribute('klira.healthcare.department', options.department);
   }
   if (options.specialty) {
-    span.setAttribute('klira.clinical.specialty', options.specialty);
+    span.setAttribute('klira.healthcare.specialty', options.specialty);
   }
   if (options.clinicalContext) {
-    span.setAttribute('klira.clinical.context', options.clinicalContext);
+    span.setAttribute('klira.healthcare.clinical_domain', options.clinicalContext);
   }
 }
 
@@ -56,5 +57,5 @@ export function setClinicalContext(options: {
 export function setInteractionModality(modality: string): void {
   const span = trace.getActiveSpan();
   if (!span) return;
-  span.setAttribute('klira.clinical.modality', modality);
+  span.setAttribute('klira.healthcare.interaction_modality', modality);
 }

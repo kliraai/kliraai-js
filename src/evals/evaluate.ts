@@ -14,6 +14,8 @@ import type {
 } from './types.js';
 
 export interface EvaluateOptions {
+  /** Unique identifier for this evaluation run. Auto-generated if omitted. */
+  runId?: string;
   /** Whether to run in eval mode (may skip certain guardrails). */
   evalMode?: boolean;
   /** Custom comparator. Default: exact match on expectedOutput. */
@@ -41,14 +43,19 @@ export async function evaluate(
 ): Promise<KliraEvalSummary> {
   const tracer = getTracer();
   const comparator = options?.comparator ?? defaultComparator;
+  const runId = options?.runId ?? crypto.randomUUID();
   const results: KliraEvalResult[] = [];
 
+  let caseIndex = 0;
   for (const testCase of dataset.testCases) {
+    const testCaseId = testCase.id ?? `${dataset.id}-${caseIndex++}`;
     const result = await tracer.startActiveSpan(
       'klira.evals.test_case',
       {
         attributes: {
-          'klira.entity_type': 'eval',
+          'klira.entity_type': 'eval_test_case',
+          'klira.evals.evals_run': runId,
+          'klira.evals.test_case_id': testCaseId,
           'klira.evals.dataset_id': dataset.id,
           'klira.evals.dataset_name': dataset.name,
           'klira.evals.input': testCase.input.slice(0, 500),

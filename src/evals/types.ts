@@ -3,6 +3,7 @@
  */
 
 export interface KliraTestCase {
+  readonly id?: string;
   readonly input: string;
   readonly expectedOutput?: string;
   readonly metadata?: Record<string, unknown>;

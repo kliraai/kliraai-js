@@ -38,23 +38,48 @@ export class FuzzyMatcher {
     if (!this.enabled || !message || domains.length === 0) return [];
 
     const effectiveThreshold = threshold ?? this.threshold;
-    const normalizedMessage = message.toLowerCase();
     const matches: FuzzyMatch[] = [];
+
+    // Tokenize the message into words and n-grams matching domain keyword lengths.
+    // Comparing the full message against a short keyword would always yield ~0% similarity.
+    const tokens = this.tokenize(message);
 
     for (const domain of domains) {
       const normalizedDomain = domain.toLowerCase();
-      const distance = levenshtein.get(normalizedMessage, normalizedDomain);
-      const maxLength = Math.max(normalizedMessage.length, normalizedDomain.length);
-      if (maxLength === 0) continue;
+      const domainTokenCount = normalizedDomain.split(/\s+/).length;
 
-      const similarity = Math.round(((maxLength - distance) / maxLength) * 100);
+      // Build n-grams from message tokens matching the domain's word count
+      const ngrams = domainTokenCount > 1
+        ? this.buildNgrams(tokens, domainTokenCount)
+        : tokens.map((t) => t);
 
-      if (similarity >= effectiveThreshold) {
-        matches.push({ domain, matchedText: message, similarity });
+      for (const ngram of ngrams) {
+        const distance = levenshtein.get(ngram, normalizedDomain);
+        const maxLength = Math.max(ngram.length, normalizedDomain.length);
+        if (maxLength === 0) continue;
+
+        const similarity = Math.round(((maxLength - distance) / maxLength) * 100);
+
+        if (similarity >= effectiveThreshold) {
+          matches.push({ domain, matchedText: ngram, similarity });
+          break; // One match per domain is sufficient
+        }
       }
     }
 
     return matches;
+  }
+
+  private tokenize(message: string): string[] {
+    return message.toLowerCase().split(/\s+/).filter(Boolean);
+  }
+
+  private buildNgrams(tokens: string[], n: number): string[] {
+    const ngrams: string[] = [];
+    for (let i = 0; i <= tokens.length - n; i++) {
+      ngrams.push(tokens.slice(i, i + n).join(' '));
+    }
+    return ngrams;
   }
 
   calculateConfidence(similarity: number): number {

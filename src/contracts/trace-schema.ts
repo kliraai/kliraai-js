@@ -135,7 +135,7 @@ export const ATTR_GUARDRAILS_AUGMENTED = attr('klira.llm.guardrails.augmented', 
 
 // --- Guardrails evaluate-level attributes ---
 export const ATTR_GUARDRAILS_EVALUATE_DIRECTION = attr('klira.guardrails.direction', AttributeType.STRING, 'Guardrails evaluation direction', ['input', 'output']);
-export const ATTR_GUARDRAILS_EVALUATE_DECISION = attr('klira.guardrails.decision', AttributeType.STRING, 'Guardrails evaluation decision action', ['allow', 'block']);
+export const ATTR_GUARDRAILS_EVALUATE_DECISION = attr('klira.guardrails.decision', AttributeType.STRING, 'Guardrails evaluation decision action', ['allowed', 'blocked', 'augmented', 'llm_fallback']);
 export const ATTR_GUARDRAILS_EVALUATE_ALLOWED = attr('klira.guardrails.allowed', AttributeType.BOOL, 'Whether guardrails evaluation allowed the content');
 
 // --- Compliance attributes ---

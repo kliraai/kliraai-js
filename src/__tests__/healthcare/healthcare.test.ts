@@ -284,9 +284,9 @@ describe('FHIR context', () => {
     });
 
     const spans = exporter.getFinishedSpans();
-    expect(spans[0].attributes['klira.clinical.patient_id']).toBe('P-12345');
-    expect(spans[0].attributes['klira.clinical.encounter_id']).toBe('E-67890');
-    expect(spans[0].attributes['klira.clinical.fhir_resource_type']).toBe('Patient');
+    expect(spans[0].attributes['klira.healthcare.patient_id']).toBe('P-12345');
+    expect(spans[0].attributes['klira.healthcare.encounter_id']).toBe('E-67890');
+    expect(spans[0].attributes['klira.fhir.resource_type']).toBe('Patient');
   });
 
   it('sets clinical context on active span', () => {
@@ -300,8 +300,8 @@ describe('FHIR context', () => {
     });
 
     const spans = exporter.getFinishedSpans();
-    expect(spans[0].attributes['klira.clinical.department']).toBe('Cardiology');
-    expect(spans[0].attributes['klira.clinical.specialty']).toBe('Interventional');
+    expect(spans[0].attributes['klira.healthcare.department']).toBe('Cardiology');
+    expect(spans[0].attributes['klira.healthcare.specialty']).toBe('Interventional');
   });
 
   it('sets interaction modality', () => {
@@ -312,7 +312,7 @@ describe('FHIR context', () => {
     });
 
     const spans = exporter.getFinishedSpans();
-    expect(spans[0].attributes['klira.clinical.modality']).toBe('voice');
+    expect(spans[0].attributes['klira.healthcare.interaction_modality']).toBe('voice');
   });
 });
 

@@ -2,6 +2,7 @@
  * Klira SDK v2 — Healthcare logging utilities.
  *
  * Creates clinical spans for decisions, escalations, handoffs, etc.
+ * Entity types and required attributes per trace-schema contract.
  */
 
 import { SpanStatusCode } from '@opentelemetry/api';
@@ -19,7 +20,8 @@ export function logClinicalDecision(options: {
   const tracer = getTracer();
   const span = tracer.startSpan('klira.clinical.decision', {
     attributes: {
-      'klira.entity_type': 'clinical',
+      'klira.entity_type': 'clinical_decision',
+      'klira.entity_name': options.decisionType,
       'klira.clinical.decision_type': options.decisionType,
       'klira.clinical.rationale': options.rationale,
       ...(options.confidence !== undefined && {
@@ -44,7 +46,8 @@ export function logEscalation(options: {
   const tracer = getTracer();
   const span = tracer.startSpan('klira.clinical.escalation', {
     attributes: {
-      'klira.entity_type': 'clinical',
+      'klira.entity_type': 'human_escalation',
+      'klira.entity_name': options.reason,
       'klira.clinical.escalation_reason': options.reason,
       ...(options.targetTeam && {
         'klira.clinical.target_team': options.targetTeam,
@@ -71,7 +74,8 @@ export function logHandoff(options: {
   const tracer = getTracer();
   const span = tracer.startSpan('klira.agent.handoff', {
     attributes: {
-      'klira.entity_type': 'agent',
+      'klira.entity_type': 'agent_handoff',
+      'klira.entity_name': `${options.fromAgent} → ${options.toAgent}`,
       'klira.agent.handoff_from': options.fromAgent,
       'klira.agent.handoff_to': options.toAgent,
       'klira.agent.handoff_reason': options.reason,
@@ -94,7 +98,8 @@ export function logSafetyCheck(options: {
   const tracer = getTracer();
   const span = tracer.startSpan('klira.clinical.safety_check', {
     attributes: {
-      'klira.entity_type': 'clinical',
+      'klira.entity_type': 'safety_check',
+      'klira.entity_name': options.checkType,
       'klira.clinical.safety_check_type': options.checkType,
       'klira.clinical.safety_check_passed': options.passed,
       ...(options.details && {
@@ -119,7 +124,8 @@ export function logRAGRetrieval(options: {
   const tracer = getTracer();
   const span = tracer.startSpan('klira.rag.retrieval', {
     attributes: {
-      'klira.entity_type': 'rag',
+      'klira.entity_type': 'rag_retrieval',
+      'klira.entity_name': options.source,
       'klira.rag.source': options.source,
       'klira.rag.query': options.query,
       'klira.rag.result_count': options.resultCount,
