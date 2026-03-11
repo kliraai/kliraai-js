@@ -1,150 +1,92 @@
-/**
- * Tests for configuration management
- */
+import { describe, it, expect, afterEach } from 'vitest';
+import { createConfig, validateConfig, setGlobalConfig, getGlobalConfig, resetGlobalConfig } from '../config/index.js';
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { createConfig, validateConfig, SimpleLogger } from '../config/index.js';
-import type { KliraConfig } from '../types/index.js';
-
-describe('Configuration Management', () => {
-  beforeEach(() => {
-    // Clear environment variables
-    delete process.env.KLIRA_API_KEY;
-    delete process.env.KLIRA_APP_NAME;
-    delete process.env.KLIRA_TRACING_ENABLED;
-    delete process.env.NODE_ENV;
+describe('Config v2', () => {
+  afterEach(() => {
+    resetGlobalConfig();
   });
 
   describe('createConfig', () => {
-    it('should create config with defaults', () => {
-      const config = createConfig();
-
-      expect(config.tracingEnabled).toBe(true);
-      expect(config.telemetryEnabled).toBe(false);
-      expect(config.policyEnforcement).toBe(true);
-      expect(config.policiesPath).toBeUndefined(); // Changed from './policies' - now optional
-      expect(config.verbose).toBe(false);
-      expect(config.debugMode).toBe(false);
-      expect(config.environment).toBe('development');
+    it('creates a frozen config', () => {
+      const config = createConfig({ appName: 'test-app' });
+      expect(Object.isFrozen(config)).toBe(true);
+      expect(Object.isFrozen(config.guardrails)).toBe(true);
     });
 
-    it('should use environment variables', () => {
-      process.env.KLIRA_API_KEY = 'klira_test_key';
-      process.env.KLIRA_APP_NAME = 'test-app';
-      process.env.KLIRA_TRACING_ENABLED = 'false';
-      process.env.KLIRA_VERBOSE = 'true';
-
-      const config = createConfig();
-      
-      expect(config.apiKey).toBe('klira_test_key');
+    it('sets defaults', () => {
+      const config = createConfig({ appName: 'test-app' });
       expect(config.appName).toBe('test-app');
-      expect(config.tracingEnabled).toBe(false);
-      expect(config.verbose).toBe(true);
+      expect(config.tracingEnabled).toBe(true);
+      expect(config.endpoint).toBe('https://api.getklira.com/v1/traces');
+      expect(config.guardrails.fastRulesEnabled).toBe(true);
+      expect(config.guardrails.augmentationEnabled).toBe(true);
+      expect(config.guardrails.llmFallbackEnabled).toBe(false);
+      expect(config.guardrails.failureMode).toBe('open');
     });
 
-    it('should override with explicit options', () => {
-      process.env.KLIRA_API_KEY = 'klira_env_key';
-      
+    it('prevents mutation in strict mode', () => {
+      const config = createConfig({ appName: 'test-app' });
+      expect(() => {
+        (config as any).appName = 'hacked';
+      }).toThrow();
+      expect(() => {
+        (config.guardrails as any).fastRulesEnabled = false;
+      }).toThrow();
+    });
+
+    it('accepts custom values', () => {
       const config = createConfig({
-        apiKey: 'klira_override_key',
-        verbose: true,
+        appName: 'my-app',
+        apiKey: 'klira_test_key',
+        environment: 'production',
+        guardrails: {
+          fastRulesEnabled: false,
+          failureMode: 'closed',
+        },
       });
-      
-      expect(config.apiKey).toBe('klira_override_key');
-      expect(config.verbose).toBe(true);
+      expect(config.apiKey).toBe('klira_test_key');
+      expect(config.environment).toBe('production');
+      expect(config.guardrails.fastRulesEnabled).toBe(false);
+      expect(config.guardrails.failureMode).toBe('closed');
     });
   });
 
   describe('validateConfig', () => {
-    it('should validate valid config', () => {
-      const config: KliraConfig = {
-        apiKey: 'klira_valid_key',
-        appName: 'test-app',
-        tracingEnabled: true,
-        environment: 'development',
-      };
-      
+    it('passes for valid config', () => {
+      const config = createConfig({ appName: 'test-app', apiKey: 'klira_test' });
       const errors = validateConfig(config);
-      expect(errors).toHaveLength(0);
+      expect(errors).toEqual([]);
     });
 
-    it('should detect invalid API key format', () => {
-      const config: KliraConfig = {
-        apiKey: 'invalid_key',
-        appName: 'test-app',
-      };
-      
+    it('rejects invalid API key prefix', () => {
+      const config = createConfig({ appName: 'test-app', apiKey: 'invalid_key' });
       const errors = validateConfig(config);
       expect(errors).toContain('API key must start with "klira_"');
     });
 
-    it('should detect invalid OpenTelemetry endpoint', () => {
-      const config: KliraConfig = {
-        openTelemetryEndpoint: 'not-a-url',
-        appName: 'test-app',
-      };
-      
-      const errors = validateConfig(config);
-      expect(errors).toContain('Invalid OpenTelemetry endpoint URL');
-    });
-
-    it('should require API key in production', () => {
-      const config: KliraConfig = {
-        appName: 'test-app',
-        environment: 'production',
-      };
-      
+    it('requires API key in production', () => {
+      const config = createConfig({ appName: 'test-app', environment: 'production' });
       const errors = validateConfig(config);
       expect(errors).toContain('API key is required in production environment');
     });
   });
 
-  describe('SimpleLogger', () => {
-    it('should log debug messages when in debug mode', () => {
-      const consoleSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
-      
-      const config: KliraConfig = {
-        debugMode: true,
-        appName: 'test',
-      };
-      
-      const logger = new SimpleLogger(config);
-      logger.debug('test message');
-      
-      expect(consoleSpy).toHaveBeenCalledWith('[Klira:DEBUG] test message');
-      consoleSpy.mockRestore();
+  describe('global config singleton', () => {
+    it('throws when not initialized', () => {
+      expect(() => getGlobalConfig()).toThrow('Klira SDK not initialized');
     });
 
-    it('should not log debug messages when not in debug mode', () => {
-      const consoleSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
-      
-      const config: KliraConfig = {
-        debugMode: false,
-        verbose: false,
-        appName: 'test',
-      };
-      
-      const logger = new SimpleLogger(config);
-      logger.debug('test message');
-      
-      expect(consoleSpy).not.toHaveBeenCalled();
-      consoleSpy.mockRestore();
+    it('stores and retrieves config', () => {
+      const config = createConfig({ appName: 'test-app' });
+      setGlobalConfig(config);
+      expect(getGlobalConfig()).toBe(config);
     });
 
-    it('should always log error messages', () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      
-      const config: KliraConfig = {
-        debugMode: false,
-        verbose: false,
-        appName: 'test',
-      };
-      
-      const logger = new SimpleLogger(config);
-      logger.error('error message');
-      
-      expect(consoleSpy).toHaveBeenCalledWith('[Klira:ERROR] error message');
-      consoleSpy.mockRestore();
+    it('resets properly', () => {
+      const config = createConfig({ appName: 'test-app' });
+      setGlobalConfig(config);
+      resetGlobalConfig();
+      expect(() => getGlobalConfig()).toThrow();
     });
   });
 });

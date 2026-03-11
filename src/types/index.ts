@@ -1,253 +1,111 @@
 /**
- * Core types for the Klira AI SDK
+ * Klira SDK v2 — Core types
+ *
+ * Ground-up rewrite. No v1 types carried over except proven business logic types.
  */
 
-// Base configuration interface
-export interface KliraConfig {
+// ---------------------------------------------------------------------------
+// Configuration
+// ---------------------------------------------------------------------------
+
+export interface KliraInitOptions {
   apiKey?: string;
-  appName?: string;
-  openTelemetryEndpoint?: string;
+  appName: string;
+  environment?: string;
   tracingEnabled?: boolean;
-  telemetryEnabled?: boolean;
-  policiesPath?: string;
-  policyEnforcement?: boolean;
+  endpoint?: string;
   verbose?: boolean;
   debugMode?: boolean;
-  environment?: string;
 
-  // Top-level guardrails options (for backward compatibility)
-  llmFallbackEnabled?: boolean;
+  // Policy loading
+  policiesPath?: string;
+  policyApiEndpoint?: string;
 
-  // Guardrails configuration options
+  // Guardrails
   guardrails?: {
     fastRulesEnabled?: boolean;
     augmentationEnabled?: boolean;
     llmFallbackEnabled?: boolean;
     failureMode?: 'open' | 'closed';
-    policyPath?: string; // Alternative to top-level policiesPath
-    apiEndpoint?: string;
-    apiKey?: string;
   };
 }
 
-// Guardrails types
-export interface PolicyRule {
-  id: string;
-  name: string;
-  description: string;
-  pattern?: string;
-  action: 'block' | 'warn' | 'allow';
-  // severity field removed for Python SDK parity
+/** Immutable config — frozen after Klira.init() */
+export interface KliraConfig {
+  readonly apiKey: string | undefined;
+  readonly appName: string;
+  readonly environment: string;
+  readonly tracingEnabled: boolean;
+  readonly endpoint: string;
+  readonly verbose: boolean;
+  readonly debugMode: boolean;
+  readonly policiesPath: string | undefined;
+  readonly policyApiEndpoint: string | undefined;
+  readonly guardrails: Readonly<{
+    fastRulesEnabled: boolean;
+    augmentationEnabled: boolean;
+    llmFallbackEnabled: boolean;
+    failureMode: 'open' | 'closed';
+  }>;
 }
+
+// ---------------------------------------------------------------------------
+// Guardrails
+// ---------------------------------------------------------------------------
 
 export interface PolicyMatch {
-  ruleId: string;
-  message: string;
-  // severity field removed for Python SDK parity
-  blocked: boolean;
-  metadata?: Record<string, any>;
-  // Additional compliance fields
-  description?: string;
-  policyName?: string;
-  category?: string;
-  direction?: 'input' | 'output' | string;  // Allow any string for flexibility
-  timestamp?: number;
-  // Fast rules matching fields
-  matched?: string;
-  position?: {
-    start: number;
-    end: number;
-  };
+  readonly ruleId: string;
+  readonly message: string;
+  readonly blocked: boolean;
+  readonly matched?: string;
+  readonly metadata?: Record<string, unknown>;
+  readonly description?: string;
+  readonly policyName?: string;
+  readonly category?: string;
+  readonly direction?: 'input' | 'output';
+  readonly position?: { start: number; end: number };
+  readonly timestamp?: number;
 }
 
 export interface GuardrailResult {
-  allowed: boolean;
-  blocked: boolean;
-  matches: PolicyMatch[];
-  transformedInput?: any;
-  guidelines?: string[];
-  reason?: string;
-  // Compliance metadata
-  evaluationDuration?: number;
-  triggeredPolicies?: string[];
-  policyUsage?: PolicyUsageInfo;
-  direction?: 'input' | 'output';
+  readonly allowed: boolean;
+  readonly blocked: boolean;
+  readonly matches: readonly PolicyMatch[];
+  readonly guidelines?: readonly string[];
+  readonly transformedInput?: string;
+  readonly evaluationDuration?: number;
+  readonly triggeredPolicies?: readonly string[];
+  readonly direction?: 'input' | 'output';
 }
 
 export interface GuardrailOptions {
   checkInput?: boolean;
   checkOutput?: boolean;
   augmentPrompt?: boolean;
-  onInputViolation?: 'exception' | 'alternative' | 'block';
-  onOutputViolation?: 'exception' | 'alternative' | 'redact';
-  violationResponse?: string;
-  outputViolationResponse?: string;
-  injectionStrategy?: 'auto' | 'instructions' | 'completion';
   policies?: string[];
-  // Compliance tracking options
-  enforcementMode?: 'monitor' | 'enforce';
-  customTags?: Record<string, string>;
-  trackPolicyUsage?: boolean;
-  // Metadata for tracing
-  metadata?: {
-    userId?: string;
-    [key: string]: any;
-  };
+  metadata?: Record<string, unknown>;
 }
 
-export interface VercelAIAdapterOptions extends GuardrailOptions {
-  enableStreamingGuardrails?: boolean;
-  streamingCheckInterval?: number; // Check every N chunks
-  autoInstrumentation?: boolean;
-}
+// ---------------------------------------------------------------------------
+// Wrapper options
+// ---------------------------------------------------------------------------
 
-// Observability types
-export interface TraceMetadata {
-  // Hierarchy context (matching Python SDK)
-  organizationId?: string;
-  projectId?: string;
-  agentId?: string;
-  taskId?: string;
-  toolId?: string;
-  
-  // Conversation context
-  conversationId?: string;
-  userId?: string;
-  sessionId?: string;
-  
-  // Request context
-  requestId?: string;
-  
-  // LLM context
-  model?: string;
-  provider?: string;
-  framework?: string;
-  
-  // Agent context for compliance
-  agentName?: string;
-  agentVersion?: string;
-  
-  // Additional metadata
-  [key: string]: any;
-}
-
-// Hierarchical context management (matching Python SDK)
-export interface HierarchyContext {
-  organizationId?: string;
-  projectId?: string;
-  agentId?: string;
-  taskId?: string;
-  toolId?: string;
-  conversationId?: string;
-  userId?: string;
-}
-
-export interface ConversationContext {
+export interface UserMessageOptions {
+  userId: string;
   conversationId: string;
-  userId?: string;
+  messageId: string;
 }
 
-export interface SpanAttributes {
-  // Framework and LLM attributes
-  'klira.framework': string;
-  'klira.model'?: string;
-  'klira.provider'?: string;
-  'klira.input.tokens'?: number;
-  'klira.output.tokens'?: number;
-  'klira.cost.input'?: number;
-  'klira.cost.output'?: number;
-  'klira.guardrails.enabled'?: boolean;
-  'klira.guardrails.violations'?: number;
-
-  // Hierarchy context attributes (matching Python SDK)
-  'klira.organization_id'?: string;
-  'klira.project_id'?: string;
-  'klira.agent_id'?: string;
-  'klira.task_id'?: string;
-  'klira.tool_id'?: string;
-  'klira.conversation_id'?: string;
-  'klira.user_id'?: string;
-  'klira.session_id'?: string;
-  'klira.request_id'?: string;
-
-  // Traceloop association (CRITICAL for conversation grouping)
-  'traceloop.association.properties.conversation_id'?: string;
-
-  // Compliance attributes
-  'compliance.direction'?: 'inbound' | 'outbound';
-  'compliance.decision.allowed'?: boolean;
-  'compliance.decision.action'?: 'allow' | 'block';
-  'compliance.decision.confidence'?: number;
-  'compliance.input_length'?: number;
-  'compliance.evaluation.method'?: string;
-  'compliance.decision.layer'?: string;
-
-  // Klira component attributes
-  'klira.component'?: string;
-  'klira.operation'?: string;
-  'klira.policies_count'?: number;
-  'klira.direction'?: string;
-
-  // Policy violation attributes (for compliance reporting)
-  'klira.policy.violation.ruleId'?: string;
-  'klira.policy.violation.description'?: string;
-  'klira.policy.violation.blocked'?: boolean;
-  'klira.policy.violation.category'?: string;
-  'klira.policy.violation.direction'?: string;
-
-  // Policy usage tracking
-  'klira.policy.usage.triggeredPolicies'?: string[];
-  'klira.policy.usage.evaluationCount'?: number;
-  'klira.policy.usage.direction'?: string;
-
-  // Agent and compliance context
-  'klira.agent.name'?: string;
-  'klira.agent.version'?: string;
-  'klira.policy.enforcement.mode'?: string;
-  'klira.guardrails.evaluation.duration_ms'?: number;
-
-  // Custom compliance tags
-  'klira.compliance.tags'?: Record<string, string>;
-
-  // Additional attributes
-  [key: string]: any;
+export interface ToolOptions {
+  fhirResourceType?: string;
 }
 
-// Framework adapter types
-export interface FrameworkAdapter {
-  name: string;
-  detect(): boolean;
-  wrap<T>(target: T, options?: any): T;
-  applyGuardrails(input: any, options?: GuardrailOptions): Promise<GuardrailResult>;
-  captureMetrics(metadata: TraceMetadata): Promise<void>;
-}
-
-// Streaming types
-export interface StreamChunk {
-  type: 'text' | 'tool_call' | 'finish' | 'error';
-  content: string;
-  metadata?: Record<string, any>;
-}
-
-export interface StreamProcessor {
-  process<T>(stream: AsyncIterable<T>, options?: GuardrailOptions): AsyncIterable<T>;
-}
-
+// ---------------------------------------------------------------------------
 // Error types
-export class KliraPolicyViolation extends Error {
-  public readonly matches: PolicyMatch[];
-  public readonly code = 'POLICY_VIOLATION';
-
-  constructor(message: string, matches: PolicyMatch[] = []) {
-    super(message);
-    this.name = 'KliraPolicyViolation';
-    this.matches = matches;
-  }
-}
+// ---------------------------------------------------------------------------
 
 export class KliraConfigError extends Error {
-  public readonly code = 'CONFIG_ERROR';
-
+  public readonly code = 'CONFIG_ERROR' as const;
   constructor(message: string) {
     super(message);
     this.name = 'KliraConfigError';
@@ -255,55 +113,95 @@ export class KliraConfigError extends Error {
 }
 
 export class KliraInitializationError extends Error {
-  public readonly code = 'INITIALIZATION_ERROR';
-
-  constructor(message: string, public readonly cause?: Error) {
+  public readonly code = 'INITIALIZATION_ERROR' as const;
+  constructor(message: string, public override readonly cause?: Error) {
     super(message);
     this.name = 'KliraInitializationError';
   }
 }
 
-// Compliance types
-export interface PolicyUsageInfo {
-  evaluatedPolicies: string[];
-  triggeredPolicies: string[];
-  evaluationCount: number;
-  direction: 'input' | 'output';
-  duration?: number;
+export class KliraPolicyViolation extends Error {
+  public readonly code = 'POLICY_VIOLATION' as const;
+  public readonly matches: readonly PolicyMatch[];
+  constructor(message: string, matches: PolicyMatch[] = []) {
+    super(message);
+    this.name = 'KliraPolicyViolation';
+    this.matches = matches;
+  }
 }
 
-export interface ComplianceMetadata {
-  agentName?: string;
-  agentVersion?: string;
-  enforcementMode?: 'monitor' | 'enforce';
-  customTags?: Record<string, string>;
-  organizationId?: string;
-  projectId?: string;
-  evaluationTimestamp?: number;
-}
-
-export interface MatchSpanEvent {
-  name: string;
-  attributes: {
-    'match.ruleId': string;
-    'match.message': string;
-    'match.blocked': boolean;
-    'match.description'?: string;
-    'match.category'?: string;
-    'match.direction': string;
-    'match.timestamp': number;
-    'match.policyName'?: string;
-  };
-}
-
-// Utility types
-export type AsyncFunction = (...args: any[]) => Promise<any>;
-export type SyncFunction = (...args: any[]) => any;
-export type AnyFunction = AsyncFunction | SyncFunction;
+// ---------------------------------------------------------------------------
+// Logger
+// ---------------------------------------------------------------------------
 
 export interface Logger {
-  debug(message: string, ...args: any[]): void;
-  info(message: string, ...args: any[]): void;
-  warn(message: string, ...args: any[]): void;
-  error(message: string, ...args: any[]): void;
+  debug(message: string, ...args: unknown[]): void;
+  info(message: string, ...args: unknown[]): void;
+  warn(message: string, ...args: unknown[]): void;
+  error(message: string, ...args: unknown[]): void;
 }
+
+// ---------------------------------------------------------------------------
+// Policy types (carried over from v1 for YAML loading)
+// ---------------------------------------------------------------------------
+
+export interface PolicyDefinition {
+  readonly name: string;
+  readonly description?: string;
+  readonly direction: 'inbound' | 'outbound' | 'both';
+  readonly rules: readonly PolicyRule[];
+}
+
+export interface PolicyRule {
+  readonly id: string;
+  readonly name: string;
+  readonly description?: string;
+  readonly pattern?: string;
+  readonly keywords?: readonly string[];
+  readonly action: 'block' | 'allow';
+  readonly message?: string;
+  readonly metadata?: Record<string, unknown>;
+}
+
+// ---------------------------------------------------------------------------
+// Adapter types
+// ---------------------------------------------------------------------------
+
+export interface LLMCallOptions {
+  model: string;
+  messages?: Array<Record<string, unknown>>;
+  guidelines?: readonly string[];
+}
+
+export interface LLMCallResult {
+  model?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  finishReasons?: string[];
+  output?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Re-exports from contracts
+// ---------------------------------------------------------------------------
+
+export type {
+  SpanAttribute,
+  SpanDefinition,
+  SpanValidationError,
+} from '../contracts/trace-schema.js';
+
+export type {
+  GuardrailTransition,
+} from '../contracts/guardrails-lifecycle.js';
+
+export type {
+  PhiEntityResult,
+  PhiScanResult,
+  PhiSpanAttributes,
+} from '../contracts/phi-pipeline.js';
+
+export type {
+  BaseLLMAdapter,
+  BaseFrameworkAdapter,
+} from '../contracts/adapter-interfaces.js';
