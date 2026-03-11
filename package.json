@@ -88,8 +88,11 @@
   "homepage": "https://github.com/kliraai/kliraai-js#readme",
   "dependencies": {
     "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/context-async-hooks": "^2.0.0",
+    "@opentelemetry/core": "^2.0.0",
     "@opentelemetry/exporter-trace-otlp-proto": "^0.207.0",
     "@opentelemetry/resources": "^2.2.0",
+    "@opentelemetry/sdk-trace-base": "^2.0.0",
     "@opentelemetry/semantic-conventions": "^1.29.0",
     "fast-levenshtein": "^3.0.0",
     "js-yaml": "^4.1.0",
