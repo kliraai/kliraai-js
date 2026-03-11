@@ -6,7 +6,7 @@
  */
 
 import type { PolicyMatch, PolicyDefinition } from '../types/index.js';
-import { FuzzyMatcher, type FuzzyMatch } from './fuzzy-matcher.js';
+import { FuzzyMatcher } from './fuzzy-matcher.js';
 import { type CompiledPolicy, compilePolicies, loadPoliciesFromYAML, loadDefaultPolicies } from './policy-loader.js';
 
 export interface FastRulesResult {

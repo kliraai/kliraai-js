@@ -4,7 +4,7 @@
  * Takes fast rules result → produces decision (allowed/blocked/augmented).
  */
 
-import type { PolicyMatch, GuardrailResult } from '../types/index.js';
+import type { GuardrailResult } from '../types/index.js';
 import type { FastRulesResult } from './fast-rules.js';
 
 export type GuardrailDecision = 'allowed' | 'blocked' | 'augmented' | 'llm_fallback';
@@ -15,7 +15,7 @@ export function routeDecision(
   direction: 'inbound' | 'outbound',
   evaluationDuration: number,
 ): { result: GuardrailResult; decision: GuardrailDecision } {
-  const { matches, blocked, allowed } = fastRulesResult;
+  const { matches, blocked } = fastRulesResult;
 
   let decision: GuardrailDecision;
   if (blocked) {

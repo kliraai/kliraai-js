@@ -4,7 +4,7 @@
  * Creates clinical spans for decisions, escalations, handoffs, etc.
  */
 
-import { trace, SpanStatusCode, type Span } from '@opentelemetry/api';
+import { SpanStatusCode } from '@opentelemetry/api';
 import { getTracer } from '../observability/pipeline.js';
 
 /**

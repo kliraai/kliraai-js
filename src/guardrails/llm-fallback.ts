@@ -51,9 +51,9 @@ export class LLMFallbackService {
   /**
    * Create an OpenAI-based LLM service.
    */
-  static createOpenAIService(options: { apiKey: string }): LLMService {
+  static createOpenAIService(_options: { apiKey: string }): LLMService {
     return {
-      async evaluate(content: string, direction: string) {
+      async evaluate(_content: string, _direction: string) {
         // Simplified — in production this would call OpenAI API
         // The full implementation is in the v1 llm-fallback.ts
         return { allowed: true, blocked: false, matches: [] };

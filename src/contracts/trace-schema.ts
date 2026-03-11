@@ -181,7 +181,6 @@ export const ATTR_EVALS_EXPECTED_OUTPUT = attr('klira.evals.expected_output', At
 
 // Helper constants for parent constraints
 const ROOT_OR_USER_MESSAGE = ['root', 'klira.user.message'] as const;
-const CHILD_OF_USER_MESSAGE = ['klira.user.message'] as const;
 const CHILD_OF_ANY_KLIRA = [
   'klira.user.message', 'klira.workflow.*', 'klira.agent.*',
   'klira.task.*', 'klira.tool.*',
@@ -426,7 +425,7 @@ function matchSpanDefinition(spanName: string): SpanDefinition | null {
   for (const defn of Object.values(SPAN_DEFINITIONS)) {
     if (!defn.nameTemplate) continue;
     const prefix = defn.nameTemplate.split('{')[0];
-    if (spanName.startsWith(prefix)) {
+    if (prefix && spanName.startsWith(prefix)) {
       return defn;
     }
   }
@@ -501,7 +500,7 @@ export function validateSpan(
             parentMatches = true;
             break;
           }
-        } else if (parentSpanName === constraint || parentSpanName.startsWith(constraint.split('{')[0])) {
+        } else if (parentSpanName === constraint || parentSpanName.startsWith(constraint.split('{')[0] ?? '')) {
           parentMatches = true;
           break;
         }

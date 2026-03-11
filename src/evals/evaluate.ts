@@ -8,7 +8,6 @@
 import { SpanStatusCode } from '@opentelemetry/api';
 import { getTracer } from '../observability/pipeline.js';
 import type {
-  KliraTestCase,
   KliraEvalResult,
   KliraEvalSummary,
   KliraDataset,

@@ -10,31 +10,6 @@ import type { LLMCallResult } from '../../types/index.js';
 
 const FRAMEWORK_NAME = 'langchain';
 
-// ---------------------------------------------------------------------------
-// Types (avoid requiring as dependency)
-// ---------------------------------------------------------------------------
-
-interface LangChainCallbackHandlerMethods {
-  handleLLMStart?: (
-    llm: { name: string },
-    prompts: string[],
-    runId: string,
-  ) => void | Promise<void>;
-  handleLLMEnd?: (output: any, runId: string) => void | Promise<void>;
-  handleLLMError?: (error: Error, runId: string) => void | Promise<void>;
-  handleChainStart?: (
-    chain: { name: string },
-    inputs: Record<string, unknown>,
-    runId: string,
-  ) => void | Promise<void>;
-  handleChainEnd?: (outputs: Record<string, unknown>, runId: string) => void | Promise<void>;
-  handleChainError?: (error: Error, runId: string) => void | Promise<void>;
-}
-
-// ---------------------------------------------------------------------------
-// Adapter
-// ---------------------------------------------------------------------------
-
 export interface LangChainAdapterOptions {
   guidelines?: readonly string[];
   suppressNativeTracing?: boolean;

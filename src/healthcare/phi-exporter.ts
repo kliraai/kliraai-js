@@ -12,12 +12,11 @@ import type {
   SpanExporter,
   ReadableSpan,
 } from '@opentelemetry/sdk-trace-base';
-import { ExportResult, ExportResultCode } from '@opentelemetry/core';
+import { ExportResult } from '@opentelemetry/core';
 import {
   PHI_SCANNABLE_ATTRIBUTES,
   PHI_SCANNABLE_PATTERNS,
   type PhiMethod,
-  type PhiSpanAttributes,
 } from '../contracts/phi-pipeline.js';
 import { PhiScanner } from './phi-scanner.js';
 import { deidentify } from './phi-deidentifier.js';

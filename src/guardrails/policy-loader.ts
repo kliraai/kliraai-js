@@ -135,7 +135,7 @@ function transformYAMLPolicy(raw: RawYAMLPolicy): PolicyDefinition {
     rules.push(rule);
   } else if (raw.domains && raw.domains.length > 0) {
     // Add keywords to the first rule
-    rules[0] = { ...rules[0], keywords: raw.domains };
+    (rules as any)[0] = { ...rules[0], keywords: raw.domains };
   }
 
   return {
@@ -191,7 +191,7 @@ export async function loadPoliciesFromAPI(
     if (!response.ok) return [];
     const data = (await response.json()) as PolicyFile;
     if (!data?.policies || !Array.isArray(data.policies)) return [];
-    return data.policies.filter((p: any) => validatePolicy(p));
+    return data.policies.filter((p: any) => validateRawPolicy(p)).map(transformYAMLPolicy);
   } catch {
     return [];
   }

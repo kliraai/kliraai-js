@@ -220,8 +220,6 @@ describe('Custom adapter', () => {
   });
 
   it('createCustomAdapter augments messages with guidelines', async () => {
-    let capturedMessages: any = null;
-
     const adapter = createCustomAdapter('test', {
       guidelines: ['Be careful'],
     });

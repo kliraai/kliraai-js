@@ -8,7 +8,7 @@
  * ComplianceAudit, LLMFallbackService. Creates OTel spans per naming convention.
  */
 
-import { context, trace, SpanStatusCode, type Span } from '@opentelemetry/api';
+import { context, SpanStatusCode, type Span } from '@opentelemetry/api';
 import {
   GuardrailLifecycle,
   GuardrailState,

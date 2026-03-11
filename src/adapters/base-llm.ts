@@ -130,7 +130,7 @@ export function augmentMessages(
   if (systemIdx >= 0) {
     result[systemIdx] = {
       ...result[systemIdx],
-      content: `${result[systemIdx].content ?? ''}${guidelinesText}`,
+      content: `${String(result[systemIdx]?.content ?? '')}${guidelinesText}`,
     };
   } else {
     result.unshift({ role: 'system', content: guidelinesText.trim() });

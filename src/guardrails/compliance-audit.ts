@@ -5,7 +5,7 @@
  * Never blocks the hot path (Learning #20).
  */
 
-import { context, trace, SpanStatusCode } from '@opentelemetry/api';
+import { context, SpanStatusCode } from '@opentelemetry/api';
 import { getTracer } from '../observability/pipeline.js';
 import type { GuardrailResult } from '../types/index.js';
 import type { GuardrailDecision } from './decision-router.js';

@@ -114,7 +114,7 @@ export class KliraConfigError extends Error {
 
 export class KliraInitializationError extends Error {
   public readonly code = 'INITIALIZATION_ERROR' as const;
-  constructor(message: string, public override readonly cause?: Error) {
+  constructor(message: string, public readonly cause?: Error) {
     super(message);
     this.name = 'KliraInitializationError';
   }

@@ -8,7 +8,6 @@
 
 import { withLLMSpan, augmentMessages } from '../base-llm.js';
 import type { LLMCallResult } from '../../types/index.js';
-import type { BaseFrameworkAdapter } from '../../contracts/adapter-interfaces.js';
 
 const FRAMEWORK_NAME = 'vercel-ai';
 
