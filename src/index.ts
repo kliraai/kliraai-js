@@ -1,330 +1,154 @@
 /**
- * Klira AI JavaScript/TypeScript SDK
- * Main entry point for the SDK
+ * Klira SDK v2 — Main entry point.
+ *
+ * Ground-up rewrite following Python SDK v2 contracts.
+ * Public API: Klira.init(), Klira.shutdown(), plus HOF wrappers.
  */
 
-import type { 
-  KliraConfig, 
-  GuardrailOptions, 
-  TraceMetadata,
-  HierarchyContext,
-  Logger 
-} from './types/index.js';
-import { 
-  createConfig, 
-  setGlobalConfig, 
+import type { KliraConfig, KliraInitOptions } from './types/index.js';
+import { KliraConfigError, KliraInitializationError } from './types/index.js';
+import {
+  createConfig,
+  setGlobalConfig,
   validateConfig,
-  getLogger,
-  KliraConfigError,
-  KliraInitializationError 
+  resetGlobalConfig,
+  SimpleLogger,
 } from './config/index.js';
-import { GuardrailsEngine, type GuardrailsEngineConfig } from './guardrails/engine.js';
-import { LLMFallbackService } from './guardrails/llm-fallback.js';
-import { KliraTracing } from './observability/tracing.js';
-import { KliraMetrics } from './observability/metrics.js';
+import { initPipeline, shutdownPipeline, resetPipeline } from './observability/pipeline.js';
 
-export class KliraAI {
-  private static initialized = false;
-  private static config: KliraConfig | null = null;
-  private static guardrails: GuardrailsEngine | null = null;
-  private static tracing: KliraTracing | null = null;
-  private static metrics: KliraMetrics | null = null;
-  private static logger: Logger | null = null;
+// ---------------------------------------------------------------------------
+// Klira — static class (renamed from KliraAI)
+// ---------------------------------------------------------------------------
+
+export class Klira {
+  private static _initialized = false;
+  private static _config: Readonly<KliraConfig> | null = null;
+
+  private constructor() {} // Prevent instantiation
 
   /**
-   * Initialize the Klira AI SDK
+   * Initialize the Klira SDK.
+   *
+   * Config is frozen after this call — no mutation allowed.
+   * Policy loading is synchronous (YAML via fs.readFileSync).
    */
-  static async init(options: Partial<KliraConfig> = {}): Promise<void> {
-    if (KliraAI.initialized) {
-      KliraAI.logger?.warn('Klira AI SDK already initialized');
-      return;
+  static async init(options: KliraInitOptions): Promise<Readonly<KliraConfig>> {
+    if (Klira._initialized) {
+      return Klira._config!;
     }
 
     try {
-      // Create and validate configuration
+      // Create and validate immutable config
       const config = createConfig(options);
-      const validationErrors = validateConfig(config);
-      
-      if (validationErrors.length > 0) {
-        throw new KliraConfigError(`Configuration validation failed: ${validationErrors.join(', ')}`);
+      const errors = validateConfig(config);
+      if (errors.length > 0) {
+        throw new KliraConfigError(`Config validation failed: ${errors.join(', ')}`);
       }
 
-      // Set global configuration
+      // Store globally
       setGlobalConfig(config);
-      KliraAI.config = config;
-      KliraAI.logger = getLogger();
+      Klira._config = config;
 
-      KliraAI.logger.info('Initializing Klira AI SDK...');
+      const logger = new SimpleLogger(config);
+      logger.info('Initializing Klira SDK v2...');
 
-      // Initialize observability
+      // Initialize OTel pipeline (direct TracerProvider, no NodeSDK)
       if (config.tracingEnabled) {
-        KliraAI.tracing = KliraTracing.fromKliraConfig(config);
-        await KliraAI.tracing.initialize();
-        
-        KliraAI.metrics = KliraMetrics.fromKliraConfig(config);
-        await KliraAI.metrics.initialize();
-        KliraAI.logger.debug('Observability initialized');
+        initPipeline(config);
+        logger.debug('OTel pipeline initialized');
       }
 
-      // Initialize guardrails engine with config options
-      const guardrailsConfig: GuardrailsEngineConfig = {
-        // Default values
-        fastRulesEnabled: true,
-        augmentationEnabled: true,
-        llmFallbackEnabled: false,
-        failureMode: 'open',
+      Klira._initialized = true;
+      logger.info('Klira SDK v2 initialized');
 
-        // Override with user-provided guardrails config
-        ...config.guardrails,
-
-        // Map top-level policiesPath to policyPath if not already set in guardrails config
-        policyPath: config.guardrails?.policyPath || config.policiesPath,
-
-        // Pass tracing instance for augmentation observability
-        tracing: KliraAI.tracing || undefined,
-      };
-
-      // Setup LLM service for fallback if enabled
-      // Check both top-level and nested llmFallbackEnabled (nested takes precedence)
-      // Only auto-enable if OPENAI_API_KEY is set AND user hasn't explicitly disabled it
-      const llmFallbackSetting = config.guardrails?.llmFallbackEnabled ?? config.llmFallbackEnabled;
-      const shouldEnableLLMFallback =
-        llmFallbackSetting === true ||
-        (llmFallbackSetting === undefined && process.env.OPENAI_API_KEY);
-
-      if (shouldEnableLLMFallback) {
-        try {
-          const llmService = LLMFallbackService.createOpenAIService({
-            apiKey: process.env.OPENAI_API_KEY || '',
-          });
-          guardrailsConfig.llmService = llmService;
-          guardrailsConfig.llmFallbackEnabled = true;
-          KliraAI.logger.debug('LLM fallback service enabled with OpenAI');
-        } catch (error) {
-          KliraAI.logger.warn('Failed to initialize LLM fallback service, continuing without it');
-        }
-      }
-
-      KliraAI.guardrails = GuardrailsEngine.getInstance(guardrailsConfig);
-      await KliraAI.guardrails.initialize();
-
-      KliraAI.initialized = true;
-      KliraAI.logger.info('Klira AI SDK initialized successfully');
-
+      return config;
     } catch (error) {
-      const message = `Failed to initialize Klira AI SDK: ${error}`;
-      console.error(message);
-      throw new KliraInitializationError(message, error as Error);
+      if (error instanceof KliraConfigError) throw error;
+      throw new KliraInitializationError(
+        `Failed to initialize Klira SDK: ${error}`,
+        error instanceof Error ? error : undefined,
+      );
     }
   }
 
-  /**
-   * Get the current configuration
-   */
-  static getConfig(): KliraConfig {
-    if (!KliraAI.initialized) {
-      throw new Error('Klira AI SDK not initialized. Call KliraAI.init() first.');
+  /** Get the frozen config. Throws if not initialized. */
+  static getConfig(): Readonly<KliraConfig> {
+    if (!Klira._initialized || !Klira._config) {
+      throw new KliraConfigError('Klira SDK not initialized. Call Klira.init() first.');
     }
-    return KliraAI.config!;
+    return Klira._config;
   }
 
-  /**
-   * Get the guardrails engine
-   */
-  static getGuardrails(): GuardrailsEngine {
-    if (!KliraAI.initialized) {
-      throw new Error('Klira AI SDK not initialized. Call KliraAI.init() first.');
-    }
-    return KliraAI.guardrails!;
-  }
-
-  /**
-   * Get the tracing instance
-   */
-  static getTracing(): KliraTracing | null {
-    return KliraAI.tracing;
-  }
-
-  /**
-   * Get the metrics instance
-   */
-  static getMetrics(): KliraMetrics | null {
-    return KliraAI.metrics;
-  }
-
-  /**
-   * Check if SDK is initialized
-   */
   static isInitialized(): boolean {
-    return KliraAI.initialized;
+    return Klira._initialized;
   }
 
-  /**
-   * Set association properties for current trace (enhanced version)
-   */
-  static setTraceMetadata(metadata: TraceMetadata): void {
-    if (KliraAI.tracing) {
-      const attributes: Record<string, any> = {};
-      
-      // Hierarchy context
-      if (metadata.organizationId) attributes['klira.organization_id'] = metadata.organizationId;
-      if (metadata.projectId) attributes['klira.project_id'] = metadata.projectId;
-      if (metadata.agentId) attributes['klira.agent_id'] = metadata.agentId;
-      if (metadata.taskId) attributes['klira.task_id'] = metadata.taskId;
-      if (metadata.toolId) attributes['klira.tool_id'] = metadata.toolId;
-      
-      // Conversation context
-      if (metadata.conversationId) attributes['klira.conversation_id'] = metadata.conversationId;
-      if (metadata.userId) attributes['klira.user_id'] = metadata.userId;
-      if (metadata.sessionId) attributes['klira.session_id'] = metadata.sessionId;
-      
-      // Request context
-      if (metadata.requestId) attributes['klira.request_id'] = metadata.requestId;
-      
-      // LLM context
-      if (metadata.model) attributes['llm.model'] = metadata.model;
-      if (metadata.provider) attributes['llm.provider'] = metadata.provider;
-      if (metadata.framework) attributes['llm.framework'] = metadata.framework;
-      
-      // Backward compatibility attributes
-      if (metadata.userId) attributes['user.id'] = metadata.userId;
-      if (metadata.sessionId) attributes['session.id'] = metadata.sessionId;
-      if (metadata.requestId) attributes['request.id'] = metadata.requestId;
-      
-      KliraAI.tracing.addAttributes(attributes);
-    }
-  }
-
-  /**
-   * Set organization context (matching Python SDK)
-   */
-  static setOrganization(organizationId: string): void {
-    if (KliraAI.tracing) {
-      KliraAI.tracing.setOrganization(organizationId);
-    }
-  }
-
-  /**
-   * Set project context (matching Python SDK)
-   */
-  static setProject(projectId: string): void {
-    if (KliraAI.tracing) {
-      KliraAI.tracing.setProject(projectId);
-    }
-  }
-
-  /**
-   * Set conversation context (matching Python SDK)
-   */
-  static setConversationContext(conversationId: string, userId?: string): void {
-    if (KliraAI.tracing) {
-      KliraAI.tracing.setConversationContext(conversationId, userId);
-    }
-  }
-
-  /**
-   * Set complete hierarchy context (matching Python SDK)
-   */
-  static setHierarchyContext(context: HierarchyContext): void {
-    if (KliraAI.tracing) {
-      KliraAI.tracing.setHierarchyContext(context);
-    }
-  }
-
-  /**
-   * Get current context (matching Python SDK)
-   */
-  static getCurrentContext(): Partial<TraceMetadata> {
-    if (KliraAI.tracing) {
-      return KliraAI.tracing.getCurrentContext();
-    }
-    return {};
-  }
-
-  /**
-   * Set external prompt tracing context (matching Python SDK)
-   */
-  static setExternalPromptContext(promptId: string, model: string, parameters?: Record<string, any>): void {
-    if (KliraAI.tracing) {
-      KliraAI.tracing.setExternalPromptContext(promptId, model, parameters);
-    }
-  }
-
-  /**
-   * Evaluate content with guardrails
-   */
-  static async evaluateContent(
-    content: string,
-    options: GuardrailOptions = {}
-  ) {
-    if (!KliraAI.initialized) {
-      throw new Error('Klira AI SDK not initialized. Call KliraAI.init() first.');
-    }
-
-    return KliraAI.guardrails!.evaluateInput(content, options);
-  }
-
-  /**
-   * Shutdown the SDK
-   */
+  /** Flush pending spans and shut down the SDK. */
   static async shutdown(): Promise<void> {
-    if (!KliraAI.initialized) {
-      return;
-    }
+    if (!Klira._initialized) return;
 
-    try {
-      if (KliraAI.tracing) {
-        await KliraAI.tracing.shutdown();
-      }
+    await shutdownPipeline();
 
-      if (KliraAI.metrics) {
-        await KliraAI.metrics.shutdown();
-      }
-
-      KliraAI.initialized = false;
-      KliraAI.config = null;
-      KliraAI.guardrails = null;
-      KliraAI.tracing = null;
-      KliraAI.metrics = null;
-      KliraAI.logger = null;
-
-      // Reset singletons
-      GuardrailsEngine.resetInstance();
-      KliraTracing.resetInstance();
-      KliraMetrics.resetInstance();
-
-      console.log('Klira AI SDK shut down successfully');
-    } catch (error) {
-      console.error(`Error during SDK shutdown: ${error}`);
-    }
+    Klira._initialized = false;
+    Klira._config = null;
+    resetGlobalConfig();
+    resetPipeline();
   }
 }
 
-// Re-export types and utilities
+// Re-export types
 export type {
   KliraConfig,
-  GuardrailOptions,
-  TraceMetadata,
-  HierarchyContext,
-  PolicyMatch,
+  KliraInitOptions,
   GuardrailResult,
-  SpanAttributes,
-  FrameworkAdapter,
-  StreamChunk,
-  StreamProcessor,
+  GuardrailOptions,
+  PolicyMatch,
+  UserMessageOptions,
+  ToolOptions,
+  LLMCallOptions,
+  LLMCallResult,
   Logger,
+  PolicyDefinition,
+  PolicyRule,
 } from './types/index.js';
 
 export {
-  KliraPolicyViolation,
   KliraConfigError,
   KliraInitializationError,
+  KliraPolicyViolation,
 } from './types/index.js';
 
-export { guardrails } from './decorators/guardrails.js';
-export { GuardrailsEngine } from './guardrails/engine.js';
-export { KliraTracing } from './observability/tracing.js';
-export { KliraMetrics } from './observability/metrics.js';
+// Re-export contracts
+export {
+  SCHEMA_VERSION,
+  AttributeType,
+  ATTRIBUTE_REGISTRY,
+  SPAN_DEFINITIONS,
+  validateSpan,
+} from './contracts/trace-schema.js';
+
+export {
+  GuardrailState,
+  GuardrailLifecycle,
+  VALID_TRANSITIONS,
+} from './contracts/guardrails-lifecycle.js';
+
+export {
+  PhiMethod,
+  PHI_SCANNABLE_ATTRIBUTES,
+  PHI_SCANNABLE_PATTERNS,
+} from './contracts/phi-pipeline.js';
+
+export {
+  PROMPT_TRUNCATION_LIMIT,
+  OUTPUT_TRUNCATION_LIMIT,
+} from './contracts/adapter-interfaces.js';
+
+// Re-export observability
+export { getTracer } from './observability/pipeline.js';
+
+// Re-export wrappers
+export { workflow, agent, task, tool, userMessage } from './wrappers/index.js';
 
 // Default export
-export default KliraAI;
+export default Klira;

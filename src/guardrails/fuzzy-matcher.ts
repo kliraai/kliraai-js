@@ -1,186 +1,91 @@
 /**
- * Fuzzy String Matching for Guardrails
+ * Klira SDK v2 — Fuzzy matcher with 85% threshold.
  *
- * Provides fuzzy string matching capabilities to catch typos, character substitutions,
- * and variations that bypass exact pattern matching.
- * Matches Python SDK implementation at fast_rules.py:680-726
+ * Levenshtein-based matching. Single threshold: 85% (raised from v1's 70%).
  */
 
 import levenshtein from 'fast-levenshtein';
-import type { Logger } from '../types/index.js';
-import { getLogger } from '../config/index.js';
 
 export interface FuzzyMatch {
-  domain: string;
-  matchedText: string;
-  similarity: number; // 0-100 percentage
+  readonly domain: string;
+  readonly matchedText: string;
+  readonly similarity: number;
 }
 
-export interface FuzzyMatchStats {
-  matchedCount: number;
-  totalPatterns: number;
-  minScore: number;
-  maxScore: number;
-  avgScore: number;
-  topMatch?: string;
-}
-
-export interface FuzzyMatcherConfig {
-  threshold?: number; // Default: 70 (minimum similarity to match)
-  enabled?: boolean;  // Default: true
-}
+const DEFAULT_THRESHOLD = 85;
 
 export class FuzzyMatcher {
   private threshold: number;
-  private enabled: boolean;
-  private logger: Logger;
+  private enabled = true;
 
-  constructor(config: FuzzyMatcherConfig = {}) {
-    this.threshold = config.threshold ?? 70;
-    this.enabled = config.enabled ?? true;
-    this.logger = getLogger();
-
-    if (this.enabled) {
-      this.logger.debug(`FuzzyMatcher initialized with threshold: ${this.threshold}%`);
-    }
+  constructor(threshold: number = DEFAULT_THRESHOLD) {
+    this.threshold = threshold;
   }
 
-  /**
-   * Check if message fuzzy matches any domain patterns
-   * Matches Python SDK behavior at fast_rules.py:698-726
-   */
+  isEnabled(): boolean {
+    return this.enabled;
+  }
+
+  setEnabled(enabled: boolean): void {
+    this.enabled = enabled;
+  }
+
   checkFuzzyMatch(
     message: string,
-    domains: string[],
-    threshold?: number
+    domains: readonly string[],
+    threshold?: number,
   ): FuzzyMatch[] {
-    if (!this.enabled) {
-      return [];
-    }
+    if (!this.enabled || !message || domains.length === 0) return [];
 
-    const matchThreshold = threshold ?? this.threshold;
+    const effectiveThreshold = threshold ?? this.threshold;
     const matches: FuzzyMatch[] = [];
 
-    // Normalize message to lowercase for comparison
-    const normalizedMessage = message.toLowerCase();
+    // Tokenize the message into words and n-grams matching domain keyword lengths.
+    // Comparing the full message against a short keyword would always yield ~0% similarity.
+    const tokens = this.tokenize(message);
 
     for (const domain of domains) {
       const normalizedDomain = domain.toLowerCase();
+      const domainTokenCount = normalizedDomain.split(/\s+/).length;
 
-      // Calculate similarity percentage
-      const distance = levenshtein.get(normalizedMessage, normalizedDomain);
-      const maxLength = Math.max(normalizedMessage.length, normalizedDomain.length);
-      const similarity = ((maxLength - distance) / maxLength) * 100;
+      // Build n-grams from message tokens matching the domain's word count
+      const ngrams = domainTokenCount > 1
+        ? this.buildNgrams(tokens, domainTokenCount)
+        : tokens.map((t) => t);
 
-      if (similarity >= matchThreshold) {
-        matches.push({
-          domain,
-          matchedText: message,
-          similarity: Math.round(similarity),
-        });
+      for (const ngram of ngrams) {
+        const distance = levenshtein.get(ngram, normalizedDomain);
+        const maxLength = Math.max(ngram.length, normalizedDomain.length);
+        if (maxLength === 0) continue;
 
-        this.logger.debug(
-          `Fuzzy match: "${message}" ~= "${domain}" (${similarity.toFixed(1)}% similarity)`
-        );
+        const similarity = Math.round(((maxLength - distance) / maxLength) * 100);
+
+        if (similarity >= effectiveThreshold) {
+          matches.push({ domain, matchedText: ngram, similarity });
+          break; // One match per domain is sufficient
+        }
       }
     }
 
     return matches;
   }
 
-  /**
-   * Check fuzzy matches and return statistics
-   */
-  checkFuzzyMatchWithStats(
-    message: string,
-    domains: string[],
-    threshold?: number
-  ): { matches: FuzzyMatch[]; stats: FuzzyMatchStats } {
-    if (!this.enabled) {
-      return {
-        matches: [],
-        stats: {
-          matchedCount: 0,
-          totalPatterns: domains.length,
-          minScore: 0,
-          maxScore: 0,
-          avgScore: 0,
-        }
-      };
-    }
-
-    const matches = this.checkFuzzyMatch(message, domains, threshold);
-
-    if (matches.length === 0) {
-      return {
-        matches: [],
-        stats: {
-          matchedCount: 0,
-          totalPatterns: domains.length,
-          minScore: 0,
-          maxScore: 0,
-          avgScore: 0,
-        }
-      };
-    }
-
-    const scores = matches.map(m => m.similarity);
-    const stats: FuzzyMatchStats = {
-      matchedCount: matches.length,
-      totalPatterns: domains.length,
-      minScore: Math.min(...scores),
-      maxScore: Math.max(...scores),
-      avgScore: scores.reduce((a, b) => a + b, 0) / scores.length,
-      topMatch: matches[0]?.domain, // First match is typically best
-    };
-
-    return { matches, stats };
+  private tokenize(message: string): string[] {
+    return message.toLowerCase().split(/\s+/).filter(Boolean);
   }
 
-  /**
-   * Calculate confidence score based on similarity
-   * Matches Python SDK tiers at fast_rules.py:719-725
-   */
+  private buildNgrams(tokens: string[], n: number): string[] {
+    const ngrams: string[] = [];
+    for (let i = 0; i <= tokens.length - n; i++) {
+      ngrams.push(tokens.slice(i, i + n).join(' '));
+    }
+    return ngrams;
+  }
+
   calculateConfidence(similarity: number): number {
-    if (similarity >= 90) {
-      return 0.55; // Above blocking threshold
-    } else if (similarity >= 80) {
-      return 0.45; // Below blocking threshold
-    } else {
-      return 0.35; // Low confidence (70-79% similarity)
-    }
-  }
-
-  /**
-   * Enable/disable fuzzy matching
-   */
-  setEnabled(enabled: boolean): void {
-    this.enabled = enabled;
-    this.logger.debug(`FuzzyMatcher ${enabled ? 'enabled' : 'disabled'}`);
-  }
-
-  /**
-   * Get current threshold
-   */
-  getThreshold(): number {
-    return this.threshold;
-  }
-
-  /**
-   * Update threshold
-   */
-  setThreshold(threshold: number): void {
-    if (threshold < 0 || threshold > 100) {
-      throw new Error('Threshold must be between 0 and 100');
-    }
-    this.threshold = threshold;
-    this.logger.debug(`FuzzyMatcher threshold updated to ${threshold}%`);
-  }
-
-  /**
-   * Check if fuzzy matching is enabled
-   */
-  isEnabled(): boolean {
-    return this.enabled;
+    if (similarity >= 95) return 0.95;
+    if (similarity >= 90) return 0.90;
+    if (similarity >= 85) return 0.85;
+    return 0.70;
   }
 }

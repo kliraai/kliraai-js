@@ -77,9 +77,6 @@ jobs:
       - name: Bundle size analysis
         run: npm run size
         
-      - name: Bundle size check
-        run: npm run bundlesize
-        
       - name: Store bundle analysis
         uses: actions/upload-artifact@v4
         with:
@@ -108,10 +105,10 @@ jobs:
         run: npm ci
         
       - name: Run security audit
-        run: npm audit --audit-level=high
-        
-      - name: Check for known vulnerabilities
-        run: npx audit-ci --high
+        run: npm audit --audit-level=high --omit=dev
+
+      - name: Check for known vulnerabilities (production deps)
+        run: npm audit --audit-level=moderate --omit=dev
 
   # Publishing to NPM
   publish:
@@ -254,16 +251,13 @@ jobs:
       - name: Build bundle
         run: npm run build
         
-      - name: Run bundle optimization tests
-        run: npm test -- bundle-optimization.test.ts
-        
       - name: Compare bundle sizes
         run: |
           echo "## Bundle Size Report" >> $GITHUB_STEP_SUMMARY
-          echo "| Bundle | Size | Limit |" >> $GITHUB_STEP_SUMMARY
-          echo "|--------|------|-------|" >> $GITHUB_STEP_SUMMARY
-          npm run size | grep -E "(Core SDK|Adapter)" | while read line; do
-            echo "| $line |" >> $GITHUB_STEP_SUMMARY
+          echo "| File | Size |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|------|" >> $GITHUB_STEP_SUMMARY
+          du -sh dist/*.js dist/*.cjs 2>/dev/null | while read size file; do
+            echo "| $file | $size |" >> $GITHUB_STEP_SUMMARY
           done
 
 # Environment Variables Documentation

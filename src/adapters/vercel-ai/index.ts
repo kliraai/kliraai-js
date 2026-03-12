@@ -1,581 +1,135 @@
 /**
- * Vercel AI SDK Adapter for Klira AI
- * Primary integration target for the JavaScript SDK
+ * Klira SDK v2 — Vercel AI SDK adapter.
+ *
+ * Wraps generateText, streamText, generateObject, streamObject.
+ * Suppresses Vercel telemetry by NOT passing experimental_telemetry (opt-in).
+ * Creates klira.llm.{provider} spans with gen_ai.* attributes.
  */
 
-import type { 
-  GuardrailOptions, 
-  FrameworkAdapter, 
-  TraceMetadata, 
-  GuardrailResult,
-  Logger,
-  ComplianceMetadata,
-  VercelAIAdapterOptions,
-} from '../../types/index.js';
-import { getLogger } from '../../config/index.js';
-import { GuardrailsEngine } from '../../guardrails/engine.js';
-import { KliraTracing } from '../../observability/tracing.js';
-import { KliraMetrics } from '../../observability/metrics.js';
-import { KliraPolicyViolation } from '../../types/index.js';
+import { withLLMSpan, augmentMessages } from '../base-llm.js';
+import type { LLMCallResult } from '../../types/index.js';
 
-// Type definitions for Vercel AI SDK (to avoid requiring as dependency)
-interface AISDKLanguageModel {
-  provider: string;
-  modelId: string;
-  [key: string]: any;
+const FRAMEWORK_NAME = 'vercel-ai';
+
+// ---------------------------------------------------------------------------
+// Types (avoid requiring as dependency)
+// ---------------------------------------------------------------------------
+
+interface VercelAIModel {
+  provider?: string;
+  modelId?: string;
+  [key: string]: unknown;
 }
 
-interface AISDKMessage {
-  role: 'system' | 'user' | 'assistant' | 'tool';
-  content: string;
-  [key: string]: any;
-}
-
-interface AISDKGenerateTextParams {
-  model: AISDKLanguageModel;
-  messages?: AISDKMessage[];
+interface VercelAIParams {
+  model: VercelAIModel;
+  messages?: Array<Record<string, unknown>>;
   prompt?: string;
   system?: string;
-  temperature?: number;
-  maxTokens?: number;
-  [key: string]: any;
+  experimental_telemetry?: unknown;
+  [key: string]: unknown;
 }
 
-interface AISDKStreamTextParams extends AISDKGenerateTextParams {
-  onFinish?: (result: any) => void | Promise<void>;
-  onChunk?: (chunk: any) => void | Promise<void>;
-}
+// ---------------------------------------------------------------------------
+// Adapter
+// ---------------------------------------------------------------------------
 
-interface AISDKResult {
-  text: string;
-  usage?: {
-    promptTokens: number;
-    completionTokens: number;
-    totalTokens: number;
-  };
-  [key: string]: any;
-}
-
-
-export class VercelAIAdapter implements FrameworkAdapter {
-  public readonly name = 'vercel-ai';
-  private logger: Logger;
-  private guardrails: GuardrailsEngine;
-  private tracing: KliraTracing | null;
-  private metrics: KliraMetrics | null;
-  // Removed unused streamingChecks property
-
-  constructor() {
-    this.logger = getLogger();
-    // Lazy load these to avoid initialization order issues
-    this.guardrails = null as any;
-    this.tracing = null as any;
-    this.metrics = null as any;
-  }
-
-  private ensureInitialized() {
-    if (!this.guardrails) {
-      this.guardrails = GuardrailsEngine.getInstance();
-    }
-    if (!this.tracing) {
-      try {
-        this.tracing = KliraTracing.getInstance();
-      } catch (error) {
-        // Tracing not initialized - that's OK
-        this.tracing = null;
-      }
-    }
-    if (!this.metrics) {
-      try {
-        this.metrics = KliraMetrics.getInstance();
-      } catch (error) {
-        // Metrics not initialized - that's OK
-        this.metrics = null;
-      }
-    }
-  }
-
-  /**
-   * Detect if Vercel AI SDK is available
-   */
-  detect(): boolean {
-    try {
-      // Check if ai package is available
-      require.resolve('ai');
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * Wrap Vercel AI SDK functions with Klira instrumentation
-   */
-  wrap<T>(target: T, options: VercelAIAdapterOptions = {}): T {
-    if (!target || typeof target !== 'object') {
-      return target;
-    }
-
-    // Create a proxy to intercept function calls
-    return new Proxy(target, {
-      get: (obj, prop) => {
-        const value = (obj as any)[prop];
-        
-        if (typeof value === 'function') {
-          // Wrap AI SDK functions
-          if (prop === 'generateText') {
-            return this.wrapGenerateText(value.bind(obj), options);
-          } else if (prop === 'streamText') {
-            return this.wrapStreamText(value.bind(obj), options);
-          } else if (prop === 'generateObject') {
-            return this.wrapGenerateObject(value.bind(obj), options);
-          } else if (prop === 'streamObject') {
-            return this.wrapStreamObject(value.bind(obj), options);
-          }
-        }
-        
-        return value;
-      },
-    });
-  }
-
-  /**
-   * Apply guardrails to input
-   */
-  async applyGuardrails(input: any, options: GuardrailOptions = {}): Promise<GuardrailResult> {
-    this.ensureInitialized();
-    const content = this.extractContent(input);
-    if (!content) {
-      return {
-        allowed: true,
-        blocked: false,
-        matches: [],
-        reason: 'No content to evaluate',
-      };
-    }
-
-    return this.guardrails.evaluateInput(content, options);
-  }
-
-  /**
-   * Capture metrics and traces
-   */
-  async captureMetrics(metadata: TraceMetadata): Promise<void> {
-    this.ensureInitialized();
-    if (this.metrics) {
-      this.metrics.recordRequest(metadata);
-    }
-
-    if (this.tracing) {
-      this.tracing.addAttributes({
-        'klira.framework': 'vercel-ai',
-        'klira.provider': metadata.provider || 'unknown',
-        'klira.model': metadata.model || 'unknown',
-      });
-    }
-  }
-
-  /**
-   * Wrap generateText function
-   */
-  private wrapGenerateText(
-    originalFn: (params: AISDKGenerateTextParams) => Promise<AISDKResult>,
-    options: VercelAIAdapterOptions
-  ) {
-    return async (params: AISDKGenerateTextParams): Promise<AISDKResult> => {
-      this.ensureInitialized();
-      const startTime = Date.now();
-      const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-      const metadata: TraceMetadata = {
-        framework: 'vercel-ai',
-        provider: params.model.provider,
-        model: params.model.modelId,
-        requestId,
-      };
-
-      await this.captureMetrics(metadata);
-
-      try {
-        // Input guardrails (OUTSIDE tracing wrapper)
-        let processedParams = params;
-        if (options.checkInput !== false) {
-          const inputResult = await this.guardrails.evaluateInput(
-            this.extractContent(params),
-            options
-          );
-
-          if (inputResult.blocked) {
-            this.recordViolations(inputResult, metadata, options);
-
-            if (options.onInputViolation === 'exception') {
-              throw new KliraPolicyViolation(
-                `Input policy violation: ${inputResult.reason}`,
-                inputResult.matches
-              );
-            }
-
-            // Return alternative response
-            return {
-              text: options.violationResponse || 'Request blocked due to policy violation.',
-              usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-            };
-          }
-
-          // Apply transformations and augmentation
-          processedParams = this.applyInputProcessing(params, inputResult, options);
-        }
-
-        // Execute original function (with optional tracing)
-        const executeCall = async () => {
-          const result = await originalFn(processedParams);
-
-          // Output guardrails (OUTSIDE tracing wrapper)
-          if (options.checkOutput !== false && result.text) {
-            const outputResult = await this.guardrails.evaluateOutput(result.text, options);
-
-            if (outputResult.blocked) {
-              this.recordViolations(outputResult, metadata, options);
-
-              if (options.onOutputViolation === 'exception') {
-                throw new KliraPolicyViolation(
-                  `Output policy violation: ${outputResult.reason}`,
-                  outputResult.matches
-                );
-              }
-
-              // Return alternative response
-              return {
-                ...result,
-                text: options.outputViolationResponse ||
-                      options.violationResponse ||
-                      'Response blocked due to policy violation.',
-              };
-            }
-          }
-
-          // Record success metrics
-          const duration = Date.now() - startTime;
-          this.metrics?.recordLatency('generateText', duration, metadata);
-
-          if (result.usage) {
-            this.metrics?.recordTokens(
-              result.usage.promptTokens,
-              result.usage.completionTokens,
-              metadata
-            );
-          }
-
-          this.metrics?.recordSuccess(metadata);
-          return result;
-        };
-
-        // Wrap with tracing if available, otherwise just execute
-        if (this.tracing) {
-          return await this.tracing.traceLLMCall('generateText', metadata, executeCall);
-        } else {
-          return await executeCall();
-        }
-
-      } catch (error) {
-        const duration = Date.now() - startTime;
-        this.metrics?.recordLatency('generateText', duration, metadata);
-        this.metrics?.recordError(metadata, error as Error);
-        throw error;
-      }
-    };
-  }
-
-  /**
-   * Wrap streamText function
-   */
-  private wrapStreamText(
-    originalFn: (params: AISDKStreamTextParams) => AsyncIterable<any>,
-    options: VercelAIAdapterOptions
-  ) {
-    const self = this;
-    return async function* (params: AISDKStreamTextParams): AsyncIterable<any> {
-      const startTime = Date.now();
-      const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      
-      const metadata: TraceMetadata = {
-        framework: 'vercel-ai',
-        provider: params.model.provider,
-        model: params.model.modelId,
-        requestId,
-      };
-
-      await self.captureMetrics(metadata);
-
-      try {
-        // Input guardrails
-        let processedParams = params;
-        if (options.checkInput !== false) {
-          const inputResult = await self.guardrails.evaluateInput(
-            self.extractContent(params),
-            options
-          );
-
-          if (inputResult.blocked) {
-            self.recordViolations(inputResult, metadata, options);
-            
-            if (options.onInputViolation === 'exception') {
-              throw new KliraPolicyViolation(
-                `Input policy violation: ${inputResult.reason}`,
-                inputResult.matches
-              );
-            }
-            
-            // Yield alternative response and return
-            yield {
-              type: 'text-delta',
-              textDelta: options.violationResponse || 'Request blocked due to policy violation.',
-            };
-            return;
-          }
-
-          processedParams = self.applyInputProcessing(params, inputResult, options);
-        }
-
-        // Stream processing with guardrails
-        const stream = originalFn(processedParams);
-        let chunkCount = 0;
-        let accumulatedText = '';
-        const checkInterval = options.streamingCheckInterval || 5;
-
-        for await (const chunk of stream) {
-          chunkCount++;
-
-          // Accumulate text for periodic checks
-          if (chunk.type === 'text-delta' && chunk.textDelta) {
-            accumulatedText += chunk.textDelta;
-          }
-
-          // Periodic guardrail checks during streaming
-          if (
-            options.enableStreamingGuardrails &&
-            options.checkOutput !== false &&
-            chunkCount % checkInterval === 0 &&
-            accumulatedText
-          ) {
-            const streamResult = await self.guardrails.evaluateOutput(accumulatedText, options);
-            
-            if (streamResult.blocked) {
-              self.recordViolations(streamResult, metadata, options);
-              
-              if (options.onOutputViolation === 'exception') {
-                throw new KliraPolicyViolation(
-                  `Streaming output policy violation: ${streamResult.reason}`,
-                  streamResult.matches
-                );
-              }
-              
-              // Stop the stream and return alternative
-              yield {
-                type: 'text-delta',
-                textDelta: '\n\n[Response terminated due to policy violation]',
-              };
-              return;
-            }
-          }
-
-          yield chunk;
-        }
-
-        // Final guardrail check
-        if (options.checkOutput !== false && accumulatedText) {
-          const finalResult = await self.guardrails.evaluateOutput(accumulatedText, options);
-          
-          if (finalResult.blocked) {
-            self.recordViolations(finalResult, metadata, options);
-            // Already streamed, so log the violation
-            self.logger.warn(`Final stream output blocked: ${finalResult.reason}`);
-          }
-        }
-
-        const duration = Date.now() - startTime;
-        self.metrics?.recordLatency('streamText', duration, metadata);
-        self.metrics?.recordSuccess(metadata);
-
-      } catch (error) {
-        const duration = Date.now() - startTime;
-        self.metrics?.recordLatency('streamText', duration, metadata);
-        self.metrics?.recordError(metadata, error as Error);
-        throw error;
-      }
-    };
-  }
-
-  /**
-   * Wrap generateObject function
-   */
-  private wrapGenerateObject(
-    originalFn: (params: any) => Promise<any>,
-    options: VercelAIAdapterOptions
-  ) {
-    return async (params: any): Promise<any> => {
-      // Similar to generateText but for structured output
-      return this.wrapGenerateText(originalFn, options)(params);
-    };
-  }
-
-  /**
-   * Wrap streamObject function  
-   */
-  private wrapStreamObject(
-    originalFn: (params: any) => AsyncIterable<any>,
-    options: VercelAIAdapterOptions
-  ) {
-    return this.wrapStreamText(originalFn, options);
-  }
-
-  /**
-   * Extract content from AI SDK parameters
-   */
-  private extractContent(params: any): string {
-    // Handle different parameter formats
-    if (typeof params === 'string') {
-      return params;
-    }
-
-    if (params.prompt) {
-      return params.prompt;
-    }
-
-    if (params.messages && Array.isArray(params.messages)) {
-      // Extract user message content
-      const userMessages = params.messages
-        .filter((msg: AISDKMessage) => msg.role === 'user')
-        .map((msg: AISDKMessage) => msg.content)
-        .join('\n');
-      return userMessages;
-    }
-
-    return '';
-  }
-
-  /**
-   * Apply input processing (transformations and augmentation)
-   */
-  private applyInputProcessing(
-    params: any,
-    result: GuardrailResult,
-    options: VercelAIAdapterOptions
-  ): any {
-    let processedParams = { ...params };
-
-    // Apply transformations
-    if (result.transformedInput) {
-      if (processedParams.prompt) {
-        processedParams.prompt = result.transformedInput;
-      } else if (processedParams.messages) {
-        // Update the last user message
-        const messages = [...processedParams.messages];
-        for (let i = messages.length - 1; i >= 0; i--) {
-          if (messages[i].role === 'user') {
-            messages[i] = { ...messages[i], content: result.transformedInput };
-            break;
-          }
-        }
-        processedParams.messages = messages;
-      }
-    }
-
-    // Apply augmentation guidelines
-    if (options.augmentPrompt !== false && result.guidelines && result.guidelines.length > 0) {
-      const guidelinesText = result.guidelines
-        .map((guideline, index) => `${index + 1}. ${guideline}`)
-        .join('\n');
-
-      const augmentationText = `\n\nIMPORTANT GUIDELINES:\n${guidelinesText}\n\nPlease follow these guidelines in your response.`;
-
-      if (processedParams.prompt) {
-        processedParams.prompt += augmentationText;
-      } else if (processedParams.messages) {
-        const messages = [...processedParams.messages];
-        for (let i = messages.length - 1; i >= 0; i--) {
-          if (messages[i].role === 'user') {
-            messages[i] = { 
-              ...messages[i], 
-              content: messages[i].content + augmentationText 
-            };
-            break;
-          }
-        }
-        processedParams.messages = messages;
-      }
-    }
-
-    return processedParams;
-  }
-
-  /**
-   * Record comprehensive guardrail violations in metrics and tracing
-   */
-  private recordViolations(
-    result: GuardrailResult, 
-    metadata: TraceMetadata, 
-    options?: VercelAIAdapterOptions
-  ): void {
-    // Record in metrics (legacy)
-    for (const violation of result.matches) {
-      this.metrics?.recordGuardrailViolation(
-        violation.ruleId,
-        metadata
-      );
-    }
-
-    // Enhanced compliance recording in tracing
-    if (this.tracing && result.matches.length > 0) {
-      const complianceMetadata: ComplianceMetadata = {
-        agentName: metadata.agentName || 'vercel-ai-agent',
-        agentVersion: metadata.agentVersion || '1.0.0',
-        enforcementMode: options?.enforcementMode || 'monitor',
-        customTags: options?.customTags,
-        organizationId: metadata.organizationId,
-        projectId: metadata.projectId,
-        evaluationTimestamp: Date.now(),
-      };
-
-      // Record policy violations with comprehensive compliance data
-      this.tracing.recordPolicyMatches(result.matches, result, complianceMetadata);
-      
-      // Record policy usage tracking
-      if (result.policyUsage) {
-        this.tracing.recordPolicyUsage(result.policyUsage);
-      }
-    }
-  }
+export interface VercelAIAdapterOptions {
+  guidelines?: readonly string[];
 }
 
 /**
- * Create a wrapped Vercel AI SDK instance
+ * Create a Vercel AI SDK adapter.
+ *
+ * @example
+ * ```ts
+ * import { generateText } from 'ai';
+ * import { createVercelAIAdapter } from 'klira/adapters/vercel-ai';
+ *
+ * const kliraAI = createVercelAIAdapter();
+ * const result = await kliraAI.generateText({
+ *   model: openai('gpt-4o'),
+ *   messages: [{ role: 'user', content: 'Hello' }],
+ * });
+ * ```
  */
-export function createKliraVercelAI(options: VercelAIAdapterOptions = {}) {
-  const adapter = new VercelAIAdapter();
-  
-  // Return a factory function that wraps AI SDK imports
+export function createVercelAIAdapter(options?: VercelAIAdapterOptions) {
   return {
+    frameworkName: FRAMEWORK_NAME,
+
     /**
-     * Wrap the main AI SDK module
+     * Wrap Vercel AI SDK's generateText.
      */
-    wrapAI: (aiModule: any) => adapter.wrap(aiModule, options),
-    
+    generateText: wrapVercelFn('generateText', options),
+
     /**
-     * Wrap generateText function
+     * Wrap Vercel AI SDK's streamText.
      */
-    wrapGenerateText: (generateText: any) => adapter.wrap({ generateText }, options).generateText,
-    
+    streamText: wrapVercelFn('streamText', options),
+
     /**
-     * Wrap streamText function
+     * Wrap Vercel AI SDK's generateObject.
      */
-    wrapStreamText: (streamText: any) => adapter.wrap({ streamText }, options).streamText,
-    
+    generateObject: wrapVercelFn('generateObject', options),
+
     /**
-     * Get the adapter instance
+     * Wrap Vercel AI SDK's streamObject.
      */
-    adapter,
+    streamObject: wrapVercelFn('streamObject', options),
+
+    patchFramework(): void {
+      // Vercel AI SDK telemetry is opt-in via experimental_telemetry.
+      // By not passing it, native telemetry is suppressed.
+    },
+
+    verifySuppression(): boolean {
+      return true;
+    },
   };
 }
 
-export default VercelAIAdapter;
+/**
+ * Create a wrapper for a Vercel AI SDK function.
+ * Returns a function that takes (originalFn, params) and instruments the call.
+ */
+function wrapVercelFn(
+  operation: string,
+  options?: VercelAIAdapterOptions,
+) {
+  return async (originalFn: (...args: any[]) => any, params: VercelAIParams) => {
+    const provider = params.model?.provider ?? 'unknown';
+    const modelId = params.model?.modelId ?? 'unknown';
+
+    // Suppress native telemetry by removing experimental_telemetry
+    const { experimental_telemetry, ...cleanParams } = params;
+
+    // Augment messages with guidelines
+    let messages = cleanParams.messages;
+    if (options?.guidelines && options.guidelines.length > 0 && messages) {
+      messages = augmentMessages(messages, options.guidelines);
+    }
+
+    const finalParams = { ...cleanParams, messages };
+
+    return withLLMSpan(
+      provider,
+      {
+        model: modelId,
+        messages: messages as Array<Record<string, unknown>>,
+      },
+      async (span) => {
+        span.setAttribute('klira.framework', FRAMEWORK_NAME);
+        span.setAttribute('klira.framework.operation', operation);
+        return originalFn(finalParams);
+      },
+      (response: any): LLMCallResult => ({
+        model: modelId,
+        inputTokens: response?.usage?.promptTokens,
+        outputTokens: response?.usage?.completionTokens,
+        finishReasons: response?.finishReason ? [response.finishReason] : [],
+        output: response?.text
+          ?? (response?.object ? JSON.stringify(response.object).slice(0, 500) : undefined),
+      }),
+    );
+  };
+}

@@ -1,48 +1,58 @@
 /**
- * Main guardrails engine orchestrating all policy evaluation components
+ * Klira SDK v2 — Guardrails engine.
+ *
+ * Orchestrates the guardrails lifecycle state machine:
+ *   IDLE → EVALUATING → DECIDED → AUDIT_SCHEDULED → DONE
+ *
+ * Wires together: FastRulesEngine, PolicyAugmentation, DecisionRouter,
+ * ComplianceAudit, LLMFallbackService. Creates OTel spans per naming convention.
  */
 
+import { context, SpanStatusCode, type Span } from '@opentelemetry/api';
+import {
+  GuardrailLifecycle,
+  GuardrailState,
+} from '../contracts/guardrails-lifecycle.js';
 import type {
-  PolicyMatch,
   GuardrailResult,
   GuardrailOptions,
-  Logger
+  PolicyDefinition,
 } from '../types/index.js';
-import { getLogger } from '../config/index.js';
+import { getTracer } from '../observability/pipeline.js';
 import { FastRulesEngine } from './fast-rules.js';
 import { PolicyAugmentation } from './policy-augmentation.js';
+import { routeDecision, type GuardrailDecision } from './decision-router.js';
+import { scheduleAudit } from './compliance-audit.js';
 import { LLMFallbackService, type LLMService } from './llm-fallback.js';
-import { PolicyLoader } from './policy-loader.js';
-import { PolicyDefinition } from '../types/policies.js';
-import type { KliraTracing } from '../observability/tracing.js';
+import { loadDefaultPolicies, loadPoliciesFromYAML, loadPoliciesFromAPI } from './policy-loader.js';
+
+// ---------------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------------
 
 export interface GuardrailsEngineConfig {
-  fastRulesEnabled?: boolean;
-  augmentationEnabled?: boolean;
-  llmFallbackEnabled?: boolean;
-  llmService?: LLMService;
-  failureMode?: 'open' | 'closed'; // fail open (allow) or closed (block) on errors
-  policyPath?: string; // Path to YAML policy file
-  apiEndpoint?: string; // API endpoint for dynamic policy loading
-  apiKey?: string; // API key for policy loading
-  tracing?: KliraTracing; // Tracing instance for observability
+  readonly fastRulesEnabled?: boolean;
+  readonly augmentationEnabled?: boolean;
+  readonly llmFallbackEnabled?: boolean;
+  readonly llmService?: LLMService;
+  readonly failureMode?: 'open' | 'closed';
+  readonly policyPath?: string;
+  readonly policyApiEndpoint?: string;
+  readonly apiKey?: string;
 }
 
-export class GuardrailsEngine {
-  private static instance: GuardrailsEngine | null = null;
+// ---------------------------------------------------------------------------
+// Engine
+// ---------------------------------------------------------------------------
 
+export class GuardrailsEngine {
   private fastRules: FastRulesEngine;
   private augmentation: PolicyAugmentation;
   private llmFallback: LLMFallbackService;
-  private policyLoader: PolicyLoader;
   private config: GuardrailsEngineConfig;
-  private logger: Logger;
-  private initialized: boolean = false;
-  private policies: PolicyDefinition[] = [];
-  private tracing?: KliraTracing;
-  private currentConversationId: string | null = null;
+  private initialized = false;
 
-  private constructor(config: GuardrailsEngineConfig = {}) {
+  constructor(config: GuardrailsEngineConfig = {}) {
     this.config = {
       fastRulesEnabled: true,
       augmentationEnabled: true,
@@ -51,642 +61,235 @@ export class GuardrailsEngine {
       ...config,
     };
 
-    this.logger = getLogger();
-    this.tracing = config.tracing;
     this.fastRules = new FastRulesEngine();
     this.augmentation = new PolicyAugmentation();
     this.llmFallback = new LLMFallbackService();
-    this.policyLoader = new PolicyLoader({
-      endpoint: config.apiEndpoint || '',
-      apiKey: config.apiKey || '',
-    });
 
     if (config.llmService) {
-      this.llmFallback.setLLMService(config.llmService);
-      this.llmFallback.setEnabled(this.config.llmFallbackEnabled || false);
+      this.llmFallback.configure(config.llmService);
     }
   }
 
-  /**
-   * Set conversation ID for tracing context
-   * If no conversation ID is provided, generates a timestamp-based default
-   */
-  setConversationId(conversationId?: string): void {
-    // Generate conversation ID if not provided
-    this.currentConversationId = conversationId || `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  // -------------------------------------------------------------------------
+  // Initialization
+  // -------------------------------------------------------------------------
 
-    if (this.tracing) {
-      this.tracing.setConversationContext(this.currentConversationId);
-    }
-  }
-
-  /**
-   * Get singleton instance
-   */
-  static getInstance(config?: GuardrailsEngineConfig): GuardrailsEngine {
-    if (!GuardrailsEngine.instance) {
-      GuardrailsEngine.instance = new GuardrailsEngine(config);
-    }
-    return GuardrailsEngine.instance;
-  }
-
-  /**
-   * Initialize the engine with YAML policies
-   */
   async initialize(): Promise<void> {
-    if (this.initialized) {
-      return;
+    if (this.initialized) return;
+
+    let policies: PolicyDefinition[] = [];
+
+    if (this.config.policyApiEndpoint) {
+      policies = await loadPoliciesFromAPI(
+        this.config.policyApiEndpoint,
+        this.config.apiKey,
+      );
     }
 
-    try {
-      this.logger.info('Initializing Guardrails Engine...');
-      
-      // Load policies from YAML
-      await this.loadPolicies();
-      
-      // Initialize sub-components with policies
-      await this.fastRules.initialize(this.config.policyPath);
-      await this.augmentation.initialize(this.policies);
-      
-      // Initialize LLM fallback if enabled
-      if (this.config.llmFallbackEnabled) {
-        await this.llmFallback.initialize(this.policies);
-      }
-      
-      this.initialized = true;
-      this.logger.info(
-        `Guardrails Engine initialized successfully with ${this.policies.length} policies`
-      );
-    } catch (error) {
-      this.logger.error(`Failed to initialize Guardrails Engine: ${error}`);
-      
-      // If YAML loading fails, continue with hardcoded rules
-      this.logger.warn('Falling back to hardcoded rules');
-      this.initialized = true;
+    // Fall back to YAML / default if API returned nothing
+    if (policies.length === 0) {
+      policies = this.config.policyPath
+        ? loadPoliciesFromYAML(this.config.policyPath)
+        : loadDefaultPolicies();
     }
+
+    this.fastRules.initialize(policies);
+    this.augmentation.initialize(policies);
+    this.initialized = true;
   }
 
-  /**
-   * Evaluate input content with all guardrail layers
-   */
+  isInitialized(): boolean {
+    return this.initialized;
+  }
+
+  // -------------------------------------------------------------------------
+  // Public evaluate methods
+  // -------------------------------------------------------------------------
+
   async evaluateInput(
     content: string,
-    options: GuardrailOptions = {}
+    options: GuardrailOptions = {},
+  ): Promise<GuardrailResult> {
+    return this.evaluate(content, 'inbound', options);
+  }
+
+  async evaluateOutput(
+    content: string,
+    options: GuardrailOptions = {},
+  ): Promise<GuardrailResult> {
+    return this.evaluate(content, 'outbound', options);
+  }
+
+  // -------------------------------------------------------------------------
+  // Core evaluate — state machine lifecycle
+  // -------------------------------------------------------------------------
+
+  private async evaluate(
+    content: string,
+    direction: 'inbound' | 'outbound',
+    _options: GuardrailOptions,
   ): Promise<GuardrailResult> {
     if (!this.initialized) {
       await this.initialize();
     }
 
-    // Ensure conversation ID is set (will auto-generate if not already set)
-    if (!this.currentConversationId) {
-      this.setConversationId();
-    }
+    const tracer = getTracer();
+    const spanName =
+      direction === 'inbound'
+        ? 'klira.guardrails.input'
+        : 'klira.guardrails.output';
 
-    // Extract userId from options if provided
-    const userId = options.metadata?.userId;
-
-    // Update conversation context with userId
-    if (this.tracing && userId) {
-      this.tracing.setConversationContext(this.currentConversationId!, userId);
-    }
-
-    const startTime = Date.now();
-    const evaluatedPolicies: string[] = [];
-    const triggeredPolicies: string[] = [];
-
-    // Wrap entire evaluation in compliance audit span if tracing enabled
-    const performEvaluation = async (): Promise<GuardrailResult> => {
+    return tracer.startActiveSpan(spanName, async (span: Span) => {
       try {
-        const matches: PolicyMatch[] = [];
-        let transformedContent = content;
-        let blocked = false;
-
-        // Layer 1: Fast Rules (pattern matching with direction awareness)
-        if (this.config.fastRulesEnabled) {
-          // Wrap fast rules evaluation in its own span
-          const evaluateFastRules = () => {
-            return this.fastRules.isYAMLInitialized()
-              ? this.fastRules.evaluateWithDirection(content, 'inbound')
-              : this.fastRules.evaluate(content);
-          };
-
-          const fastResult = this.tracing
-            ? this.tracing.traceFastRules(
-                evaluateFastRules,
-                'inbound',
-                this.fastRules.getPolicyIds().length,
-                this.currentConversationId || undefined
-              )
-            : evaluateFastRules();
-
-          // Track which policies were evaluated
-          const fastPolicies = this.fastRules.getPolicyIds();
-          evaluatedPolicies.push(...fastPolicies);
-
-          // Track triggered policies
-          const matchedPolicies = fastResult.matches.map(v => v.ruleId);
-          triggeredPolicies.push(...matchedPolicies);
-
-          matches.push(...fastResult.matches.map(v => ({
-            ...v,
-            direction: 'input',
-            timestamp: Date.now(),
-          })));
-
-          // transformedContent always equals original content in new model
-          transformedContent = content;
-          blocked = blocked || fastResult.blocked;
-
-          this.logger.debug(`Fast rules found ${fastResult.matches.length} matches`);
-        }
-
-      // Layer 2: LLM Fallback (for complex evaluation)
-      // Only run when NO policies matched - acts as catch-all safety layer
-      if (this.config.llmFallbackEnabled && matches.length === 0) {
-        this.logger.debug('No policies matched, running LLM fallback for safety check');
-
-        const llmResult = await this.llmFallback.evaluateWithLLM(
-          transformedContent,
-          matches,
-          { options, tracing: this.tracing }
-        );
-
-        if (llmResult) {
-          const llmPolicies = ['llm-content-safety', 'llm-policy-check'];
-          evaluatedPolicies.push(...llmPolicies);
-
-          const llmTriggeredPolicies = llmResult.matches.map(v => v.ruleId);
-          triggeredPolicies.push(...llmTriggeredPolicies);
-
-          matches.push(...llmResult.matches.map(v => ({
-            ...v,
-            direction: 'input',
-            timestamp: Date.now(),
-          })));
-
-          blocked = blocked || !llmResult.safe;
-
-          if (llmResult.modifiedContent) {
-            transformedContent = llmResult.modifiedContent;
-          }
-
-          this.logger.debug(`LLM fallback evaluation: safe=${llmResult.safe}, confidence=${llmResult.confidence}`);
-        }
-      }
-
-      // Layer 3: Generate augmentation guidelines
-      // Only generate when not blocked and for non-blocking matches (action: warn/allow)
-      let guidelines: string[] = [];
-      if (this.config.augmentationEnabled && !blocked && matches.length > 0) {
-        // Filter to only non-blocking matches
-        const nonBlockingMatches = matches.filter(m => !m.blocked);
-
-        if (nonBlockingMatches.length > 0) {
-          const nonBlockingPolicyIds = nonBlockingMatches.map(m => m.ruleId);
-          guidelines = this.augmentation.generateGuidelines(
-            nonBlockingMatches,
-            nonBlockingPolicyIds
-          );
-          this.logger.debug(
-            `Generated ${guidelines.length} augmentation guidelines from ${nonBlockingMatches.length} non-blocking matches`
-          );
-
-          // Record augmentation data in traces
-          if (this.tracing && guidelines.length > 0) {
-            this.tracing.recordAugmentation(guidelines, nonBlockingMatches, nonBlockingPolicyIds);
-          }
-        }
-      }
-
-        const duration = Date.now() - startTime;
-        const uniqueTriggeredPolicies = [...new Set(triggeredPolicies)];
-        const uniqueEvaluatedPolicies = [...new Set(evaluatedPolicies)];
-
-        return {
-          allowed: !blocked,
-          blocked,
-          matches,
-          transformedInput: transformedContent !== content ? transformedContent : undefined,
-          guidelines,
-          reason: this.createReasonMessage(matches, blocked),
-          evaluationDuration: duration,
-          triggeredPolicies: uniqueTriggeredPolicies,
-          direction: 'input',
-          policyUsage: {
-            evaluatedPolicies: uniqueEvaluatedPolicies,
-            triggeredPolicies: uniqueTriggeredPolicies,
-            evaluationCount: uniqueEvaluatedPolicies.length,
-            direction: 'input',
-            duration,
-          },
-        };
-
+        return await this.runLifecycle(content, direction, span);
       } catch (error) {
-        const duration = Date.now() - startTime;
-        this.logger.error(`Guardrails evaluation failed: ${error}`);
+        span.setStatus({ code: SpanStatusCode.ERROR, message: String(error) });
+        span.end();
+        return this.handleFailure(error, direction);
+      }
+    });
+  }
 
-        // Handle failure based on failure mode
-        if (this.config.failureMode === 'closed') {
-          return {
-            allowed: false,
-            blocked: true,
-            matches: [{
+  private async runLifecycle(
+    content: string,
+    direction: 'inbound' | 'outbound',
+    parentSpan: Span,
+  ): Promise<GuardrailResult> {
+    const lifecycle = new GuardrailLifecycle();
+    const startTime = Date.now();
+    const parentCtx = context.active();
+
+    // 1. IDLE → EVALUATING
+    lifecycle.transitionTo(GuardrailState.EVALUATING);
+    const directionAttr = direction === 'inbound' ? 'input' : 'output';
+    parentSpan.setAttribute('klira.entity_type', 'guardrails');
+    parentSpan.setAttribute('klira.guardrails.direction', directionAttr);
+
+    // Run fast rules inside a child span
+    const tracer = getTracer();
+    const fastRulesResult = tracer.startActiveSpan(
+      'klira.guardrails.fast_rules',
+      {
+        attributes: {
+          'klira.entity_type': 'guardrails',
+          'klira.guardrails.policy_count': this.fastRules.getPolicyCount(),
+        },
+      },
+      (fastSpan: Span) => {
+        const result = this.config.fastRulesEnabled
+          ? this.fastRules.evaluate(content, direction)
+          : { matches: [], blocked: false, allowed: true };
+        fastSpan.setAttribute('klira.guardrails.match_count', result.matches.length);
+        fastSpan.setStatus({ code: SpanStatusCode.OK });
+        fastSpan.end();
+        return result;
+      },
+    );
+
+    // LLM fallback when fast rules produce zero matches
+    let llmFallbackUsed = false;
+    if (
+      this.config.llmFallbackEnabled &&
+      this.llmFallback.isEnabled() &&
+      fastRulesResult.matches.length === 0
+    ) {
+      const llmResult = await this.llmFallback.evaluate(content, direction);
+      if (llmResult.matches.length > 0) {
+        llmFallbackUsed = true;
+        fastRulesResult.matches.push(...llmResult.matches);
+        if (llmResult.blocked) {
+          (fastRulesResult as any).blocked = true;
+          (fastRulesResult as any).allowed = false;
+        }
+      }
+    }
+
+    // Generate augmentation guidelines
+    const guidelines = this.config.augmentationEnabled && !fastRulesResult.blocked
+      ? this.augmentation.generateGuidelines(
+          fastRulesResult.matches,
+          fastRulesResult.matches.map((m) => m.ruleId),
+        )
+      : [];
+
+    // 2. EVALUATING → DECIDED
+    lifecycle.transitionTo(GuardrailState.DECIDED);
+    const duration = Date.now() - startTime;
+
+    // Route decision inside child span
+    const { result, decision } = tracer.startActiveSpan(
+      'klira.guardrails.route_decision',
+      {
+        attributes: {
+          'klira.entity_type': 'guardrails',
+        },
+      },
+      (routeSpan: Span) => {
+        const effectiveDecision = llmFallbackUsed ? 'llm_fallback' as GuardrailDecision : undefined;
+        const routed = routeDecision(fastRulesResult, guidelines, direction, duration);
+        const finalDecision = effectiveDecision ?? routed.decision;
+        routeSpan.setAttribute('klira.guardrails.decision', finalDecision);
+        routeSpan.setAttribute('klira.guardrails.allowed', routed.result.allowed);
+        routeSpan.setStatus({ code: SpanStatusCode.OK });
+        routeSpan.end();
+        return { result: routed.result, decision: finalDecision };
+      },
+    );
+
+    // Record decision on parent span
+    parentSpan.setAttribute('klira.guardrails.decision', decision);
+    parentSpan.setAttribute('klira.guardrails.allowed', result.allowed);
+    parentSpan.setAttribute('klira.guardrails.match_count', result.matches.length);
+    parentSpan.setAttribute('klira.guardrails.augmentation_applied', decision === 'augmented');
+    parentSpan.setAttribute('klira.guardrails.evaluation_duration_ms', duration);
+
+    // 3. DECIDED → AUDIT_SCHEDULED (async, never blocks)
+    lifecycle.transitionTo(GuardrailState.AUDIT_SCHEDULED);
+    scheduleAudit(decision, result, direction, parentCtx);
+
+    // 4. AUDIT_SCHEDULED → DONE
+    lifecycle.transitionTo(GuardrailState.DONE);
+
+    parentSpan.setStatus({ code: SpanStatusCode.OK });
+    parentSpan.end();
+
+    return result;
+  }
+
+  // -------------------------------------------------------------------------
+  // Failure handling
+  // -------------------------------------------------------------------------
+
+  private handleFailure(
+    _error: unknown,
+    direction: 'inbound' | 'outbound',
+  ): GuardrailResult {
+    const failOpen = this.config.failureMode !== 'closed';
+    return {
+      allowed: failOpen,
+      blocked: !failOpen,
+      matches: failOpen
+        ? []
+        : [
+            {
               ruleId: 'system-error',
               message: 'Guardrails evaluation failed',
               blocked: true,
-              direction: 'input',
-              timestamp: Date.now(),
-              metadata: { error: String(error) },
-            }],
-            reason: 'System error - blocking for safety',
-            evaluationDuration: duration,
-            triggeredPolicies: ['system-error'],
-            direction: 'input',
-          };
-        } else {
-          return {
-            allowed: true,
-            blocked: false,
-            matches: [],
-            reason: 'System error - allowing with warning',
-            evaluationDuration: duration,
-            triggeredPolicies: [],
-            direction: 'input',
-          };
-        }
-      }
-    };
-
-    // Execute with tracing if available
-    if (this.tracing) {
-      return this.tracing.traceCheckInput(
-        performEvaluation,
-        content.length,
-        this.currentConversationId || undefined
-      );
-    } else {
-      return performEvaluation();
-    }
-  }
-
-  /**
-   * Evaluate output content with direction awareness
-   */
-  async evaluateOutput(
-    content: string,
-    options: GuardrailOptions = {}
-  ): Promise<GuardrailResult> {
-    if (!this.initialized) {
-      await this.initialize();
-    }
-
-    // Ensure conversation ID is set (will auto-generate if not already set)
-    if (!this.currentConversationId) {
-      this.setConversationId();
-    }
-
-    // Extract userId from options if provided
-    const userId = options.metadata?.userId;
-
-    // Update conversation context with userId
-    if (this.tracing && userId) {
-      this.tracing.setConversationContext(this.currentConversationId!, userId);
-    }
-
-    const startTime = Date.now();
-    const evaluatedPolicies: string[] = [];
-    const triggeredPolicies: string[] = [];
-
-    // Wrap entire evaluation in compliance audit span if tracing enabled
-    const performEvaluation = async (): Promise<GuardrailResult> => {
-      try {
-        const matches: PolicyMatch[] = [];
-        let transformedContent = content;
-        let blocked = false;
-
-        // Layer 1: Fast Rules (pattern matching for outbound)
-        if (this.config.fastRulesEnabled) {
-          // Wrap fast rules evaluation in its own span
-          const evaluateFastRules = () => {
-            return this.fastRules.isYAMLInitialized()
-              ? this.fastRules.evaluateWithDirection(content, 'outbound')
-              : this.fastRules.evaluate(content);
-          };
-
-          const fastResult = this.tracing
-            ? this.tracing.traceFastRules(
-                evaluateFastRules,
-                'outbound',
-                this.fastRules.getPolicyIds().length,
-                this.currentConversationId || undefined
-              )
-            : evaluateFastRules();
-
-          // Track which policies were evaluated
-          const fastPolicies = this.fastRules.getPolicyIds();
-          evaluatedPolicies.push(...fastPolicies);
-
-          // Track triggered policies
-          const matchedPolicies = fastResult.matches.map(v => v.ruleId);
-          triggeredPolicies.push(...matchedPolicies);
-
-          matches.push(...fastResult.matches.map(v => ({
-            ...v,
-            direction: 'output',
-            timestamp: Date.now(),
-          })));
-
-          // transformedContent always equals original content in new model
-          transformedContent = content;
-          blocked = blocked || fastResult.blocked;
-
-          this.logger.debug(`Fast rules (output) found ${fastResult.matches.length} matches`);
-        }
-
-      // Layer 2: LLM Fallback (for complex evaluation)
-      // Only run when NO policies matched - acts as catch-all safety layer
-      if (this.config.llmFallbackEnabled && matches.length === 0) {
-        this.logger.debug('No policies matched, running LLM fallback for safety check');
-
-        const llmResult = await this.llmFallback.evaluateWithLLM(
-          transformedContent,
-          matches,
-          { options, direction: 'outbound', tracing: this.tracing }
-        );
-
-        if (llmResult) {
-          const llmPolicies = ['llm-content-safety', 'llm-policy-check'];
-          evaluatedPolicies.push(...llmPolicies);
-
-          const llmTriggeredPolicies = llmResult.matches.map(v => v.ruleId);
-          triggeredPolicies.push(...llmTriggeredPolicies);
-
-          matches.push(...llmResult.matches.map(v => ({
-            ...v,
-            direction: 'output',
-            timestamp: Date.now(),
-          })));
-
-          blocked = blocked || !llmResult.safe;
-
-          if (llmResult.modifiedContent) {
-            transformedContent = llmResult.modifiedContent;
-          }
-
-          this.logger.debug(`LLM fallback (output): safe=${llmResult.safe}`);
-        }
-      }
-
-      // Layer 3: Generate augmentation guidelines
-      // Only generate when not blocked and for non-blocking matches (action: warn/allow)
-      let guidelines: string[] = [];
-      if (this.config.augmentationEnabled && !blocked && matches.length > 0) {
-        // Filter to only non-blocking matches
-        const nonBlockingMatches = matches.filter(m => !m.blocked);
-
-        if (nonBlockingMatches.length > 0) {
-          const nonBlockingPolicyIds = nonBlockingMatches.map(m => m.ruleId);
-          guidelines = this.augmentation.generateGuidelines(
-            nonBlockingMatches,
-            nonBlockingPolicyIds
-          );
-          this.logger.debug(
-            `Generated ${guidelines.length} augmentation guidelines from ${nonBlockingMatches.length} non-blocking matches`
-          );
-
-          // Record augmentation data in traces
-          if (this.tracing && guidelines.length > 0) {
-            this.tracing.recordAugmentation(guidelines, nonBlockingMatches, nonBlockingPolicyIds);
-          }
-        }
-      }
-
-        const duration = Date.now() - startTime;
-        const uniqueTriggeredPolicies = [...new Set(triggeredPolicies)];
-        const uniqueEvaluatedPolicies = [...new Set(evaluatedPolicies)];
-
-        return {
-          allowed: !blocked,
-          blocked,
-          matches,
-          transformedInput: transformedContent !== content ? transformedContent : undefined,
-          guidelines,
-          reason: this.createReasonMessage(matches, blocked),
-          evaluationDuration: duration,
-          triggeredPolicies: uniqueTriggeredPolicies,
-          direction: 'output',
-          policyUsage: {
-            evaluatedPolicies: uniqueEvaluatedPolicies,
-            triggeredPolicies: uniqueTriggeredPolicies,
-            evaluationCount: uniqueEvaluatedPolicies.length,
-            direction: 'output',
-            duration,
-          },
-        };
-
-      } catch (error) {
-        const duration = Date.now() - startTime;
-        this.logger.error(`Output guardrails evaluation failed: ${error}`);
-
-        // Handle failure based on failure mode
-        if (this.config.failureMode === 'closed') {
-          return {
-            allowed: false,
-            blocked: true,
-            matches: [{
-              ruleId: 'system-error',
-              message: 'Output guardrails evaluation failed',
-              blocked: true,
-              direction: 'output',
-              timestamp: Date.now(),
-              metadata: { error: String(error) },
-            }],
-            reason: 'System error - blocking for safety',
-            evaluationDuration: duration,
-            triggeredPolicies: ['system-error'],
-            direction: 'output',
-          };
-        } else {
-          return {
-            allowed: true,
-            blocked: false,
-            matches: [],
-            reason: 'System error - allowing with warning',
-            evaluationDuration: duration,
-            triggeredPolicies: [],
-            direction: 'output',
-          };
-        }
-      }
-    };
-
-    // Execute with tracing if available
-    if (this.tracing) {
-      return this.tracing.traceCheckOutput(
-        performEvaluation,
-        content.length,
-        this.currentConversationId || undefined
-      );
-    } else {
-      return performEvaluation();
-    }
-  }
-
-  /**
-   * Augment prompt with policy guidelines
-   */
-  augmentPrompt(prompt: string, matches: PolicyMatch[]): string {
-    if (!this.config.augmentationEnabled) {
-      return prompt;
-    }
-
-    return this.augmentation.augmentPrompt(prompt, matches);
-  }
-
-  /**
-   * Create system message with guidelines
-   */
-  createSystemMessage(matches: PolicyMatch[]): string {
-    if (!this.config.augmentationEnabled) {
-      return '';
-    }
-
-    return this.augmentation.createSystemMessage(matches);
-  }
-
-  /**
-   * Create reason message from matches
-   */
-  private createReasonMessage(matches: PolicyMatch[], blocked: boolean): string {
-    if (matches.length === 0) {
-      return 'No policy matches detected';
-    }
-
-    if (blocked) {
-      return `Policy matches detected: ${matches.map(v => v.message).join(', ')}`;
-    } else {
-      return `Policy warnings: ${matches.map(v => v.message).join(', ')}`;
-    }
-  }
-
-  /**
-   * Update configuration
-   */
-  updateConfig(config: Partial<GuardrailsEngineConfig>): void {
-    this.config = { ...this.config, ...config };
-    
-    if (config.llmService) {
-      this.llmFallback.setLLMService(config.llmService);
-    }
-    
-    if (config.llmFallbackEnabled !== undefined) {
-      this.llmFallback.setEnabled(config.llmFallbackEnabled);
-    }
-
-    this.logger.debug('Guardrails engine configuration updated');
-  }
-
-  /**
-   * Get current configuration
-   */
-  getConfig(): GuardrailsEngineConfig {
-    return { ...this.config };
-  }
-
-  /**
-   * Get fast rules engine
-   */
-  getFastRules(): FastRulesEngine {
-    return this.fastRules;
-  }
-
-  /**
-   * Get policy augmentation engine
-   */
-  getAugmentation(): PolicyAugmentation {
-    return this.augmentation;
-  }
-
-  /**
-   * Get LLM fallback service
-   */
-  getLLMFallback(): LLMFallbackService {
-    return this.llmFallback;
-  }
-
-  /**
-   * Load policies from YAML file or API
-   */
-  private async loadPolicies(): Promise<void> {
-    try {
-      let policyFile;
-      
-      if (this.config.apiEndpoint) {
-        // Load from API if endpoint is configured
-        policyFile = await this.policyLoader.loadFromAPI();
-        this.logger.info('Loaded policies from API');
-      } else {
-        // Load from YAML file
-        policyFile = this.config.policyPath 
-          ? await this.policyLoader.loadFromYAML(this.config.policyPath)
-          : await this.policyLoader.loadDefault();
-        this.logger.info('Loaded policies from YAML file');
-      }
-      
-      this.policies = policyFile.policies;
-      this.logger.debug(`Loaded ${this.policies.length} policies from ${policyFile.version}`);
-    } catch (error) {
-      this.logger.warn(`Failed to load policies: ${error}`);
-      this.policies = [];
-    }
-  }
-
-  /**
-   * Reload policies dynamically
-   */
-  async reloadPolicies(): Promise<void> {
-    this.logger.info('Reloading policies...');
-    
-    await this.loadPolicies();
-    await this.fastRules.reloadPolicies(this.config.policyPath);
-    await this.augmentation.initialize(this.policies);
-    
-    if (this.config.llmFallbackEnabled) {
-      await this.llmFallback.initialize(this.policies);
-    }
-    
-    this.logger.info(`Policies reloaded successfully (${this.policies.length} policies)`);
-  }
-
-  /**
-   * Get loaded policies
-   */
-  getPolicies(): PolicyDefinition[] {
-    return [...this.policies];
-  }
-
-  /**
-   * Get policy statistics
-   */
-  getPolicyStats(): {
-    totalPolicies: number;
-    fastRulesStats: { yaml: number; legacy: number };
-    augmentationStats: { yamlInitialized: boolean; policyCount: number };
-  } {
-    return {
-      totalPolicies: this.policies.length,
-      fastRulesStats: this.fastRules.getPolicyCount(),
-      augmentationStats: {
-        yamlInitialized: this.augmentation.isYAMLInitialized(),
-        policyCount: this.augmentation.getPolicyGuidelinesCount(),
-      },
+            },
+          ],
+      direction: direction === 'inbound' ? 'input' : 'output',
     };
   }
 
-  /**
-   * Reset singleton instance (for testing)
-   */
-  static resetInstance(): void {
-    GuardrailsEngine.instance = null;
+  // -------------------------------------------------------------------------
+  // Accessors
+  // -------------------------------------------------------------------------
+
+  getPolicyCount(): number {
+    return this.fastRules.getPolicyCount();
+  }
+
+  augmentPrompt(prompt: string, guidelines: readonly string[]): string {
+    return this.augmentation.augmentPrompt(prompt, guidelines);
   }
 }

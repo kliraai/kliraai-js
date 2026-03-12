@@ -1,347 +1,224 @@
-import * as fs from 'fs/promises';
+/**
+ * Klira SDK v2 — Policy loader (YAML sync at init + API async).
+ *
+ * Policy loading is synchronous at init time for YAML (fs.readFileSync).
+ * API loading is async and happens during Klira.init().
+ */
+
+import fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import * as yaml from 'js-yaml';
-import { PolicyDefinition, PolicyFile, CompiledPolicy } from '../types/policies.js';
+import yaml from 'js-yaml';
+import type { PolicyDefinition, PolicyRule } from '../types/index.js';
 
-export interface PolicyAPIConfig {
-  endpoint: string;
-  apiKey: string;
-  refreshInterval?: number;
-  cachePolicy?: 'memory' | 'disk' | 'both';
+// ---------------------------------------------------------------------------
+// Pattern cache with compiled regexes
+// ---------------------------------------------------------------------------
+
+const MAX_CACHE_SIZE = 1000;
+
+export interface CompiledPolicy {
+  readonly definition: PolicyDefinition;
+  readonly compiledPatterns: RegExp[];
+  readonly domainPatterns: RegExp[];
+  readonly domains: readonly string[];
 }
 
-export class PolicyCache {
-  private compiledPatterns: Map<string, RegExp> = new Map();
-  private domainPatterns: Map<string, RegExp> = new Map();
-  private maxSize: number = 1000;
+class PolicyCache {
+  private patternCache = new Map<string, RegExp>();
+  private domainCache = new Map<string, RegExp>();
 
-  compileWithCache(pattern: string): RegExp {
-    if (this.compiledPatterns.has(pattern)) {
-      return this.compiledPatterns.get(pattern)!;
+  compilePattern(pattern: string): RegExp {
+    if (this.patternCache.has(pattern)) return this.patternCache.get(pattern)!;
+    if (this.patternCache.size >= MAX_CACHE_SIZE) {
+      const firstKey = this.patternCache.keys().next().value;
+      if (firstKey !== undefined) this.patternCache.delete(firstKey);
     }
 
     try {
-      // Clean up the pattern by removing unsupported JS regex features
-      const cleanedPattern = this.cleanPattern(pattern);
-      const regex = new RegExp(cleanedPattern, 'gi');
-      
-      // Implement simple LRU by clearing cache when full
-      if (this.compiledPatterns.size >= this.maxSize) {
-        const firstKey = this.compiledPatterns.keys().next().value;
-        if (firstKey) {
-          this.compiledPatterns.delete(firstKey);
-        }
-      }
-      
-      this.compiledPatterns.set(pattern, regex);
+      // Strip Python-style inline flags like (?i)
+      const cleaned = pattern.replace(/\(\?[a-z]+\)/g, '');
+      const regex = new RegExp(cleaned, 'gi');
+      this.patternCache.set(pattern, regex);
       return regex;
-    } catch (error) {
-      console.warn(`Failed to compile regex pattern: ${pattern}`, error);
-      // Return a safe fallback regex that never matches
-      return /(?!.*)/;
+    } catch {
+      const neverMatch = /(?!.*)/;
+      this.patternCache.set(pattern, neverMatch);
+      return neverMatch;
     }
-  }
-
-  /**
-   * Clean regex pattern to be compatible with JavaScript
-   */
-  private cleanPattern(pattern: string): string {
-    // Remove inline case-insensitive modifier (?i) since we use 'i' flag
-    let cleaned = pattern.replace(/\(\?i\)/g, '');
-    
-    // Remove other unsupported inline modifiers that might be in Python patterns
-    cleaned = cleaned.replace(/\(\?[a-zA-Z]+\)/g, '');
-    
-    return cleaned;
   }
 
   compileDomainPattern(domain: string): RegExp {
-    const cacheKey = `domain:${domain}`;
-    if (this.domainPatterns.has(cacheKey)) {
-      return this.domainPatterns.get(cacheKey)!;
+    if (this.domainCache.has(domain)) return this.domainCache.get(domain)!;
+    if (this.domainCache.size >= MAX_CACHE_SIZE) {
+      const firstKey = this.domainCache.keys().next().value;
+      if (firstKey !== undefined) this.domainCache.delete(firstKey);
     }
 
-    try {
-      // Create a case-insensitive word boundary pattern for the domain
-      const pattern = `\\b${domain.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`;
-      const regex = new RegExp(pattern, 'gi');
-      
-      if (this.domainPatterns.size >= this.maxSize) {
-        const firstKey = this.domainPatterns.keys().next().value;
-        if (firstKey) {
-          this.domainPatterns.delete(firstKey);
-        }
-      }
-      
-      this.domainPatterns.set(cacheKey, regex);
-      return regex;
-    } catch (error) {
-      console.warn(`Failed to compile domain pattern: ${domain}`, error);
-      return /(?!.*)/;
-    }
-  }
-
-  precompileAll(policies: PolicyDefinition[]): void {
-    for (const policy of policies) {
-      if (policy.patterns) {
-        for (const pattern of policy.patterns) {
-          this.compileWithCache(pattern);
-        }
-      }
-      if (policy.domains) {
-        for (const domain of policy.domains) {
-          this.compileDomainPattern(domain);
-        }
-      }
-    }
-  }
-
-  clear(): void {
-    this.compiledPatterns.clear();
-    this.domainPatterns.clear();
-  }
-
-  getStats(): { patternsCount: number; domainsCount: number } {
-    return {
-      patternsCount: this.compiledPatterns.size,
-      domainsCount: this.domainPatterns.size,
-    };
+    const escaped = domain.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`\\b${escaped}\\b`, 'gi');
+    this.domainCache.set(domain, regex);
+    return regex;
   }
 }
 
-export class PolicyLoader {
-  private cache: PolicyCache = new PolicyCache();
-  private apiConfig?: PolicyAPIConfig;
-  private loadedPolicies: Map<string, PolicyFile> = new Map();
+const cache = new PolicyCache();
 
-  constructor(apiConfig?: PolicyAPIConfig) {
-    this.apiConfig = apiConfig;
-  }
+// ---------------------------------------------------------------------------
+// YAML loading (synchronous at init per Learning #9)
+// ---------------------------------------------------------------------------
 
-  async loadFromYAML(filePath: string): Promise<PolicyFile> {
-    try {
-      // Check if already loaded
-      if (this.loadedPolicies.has(filePath)) {
-        return this.loadedPolicies.get(filePath)!;
-      }
+interface RawYAMLPolicy {
+  readonly id: string;
+  readonly name: string;
+  readonly direction: string;
+  readonly action: string;
+  readonly description?: string;
+  readonly patterns?: readonly string[];
+  readonly domains?: readonly string[];
+  readonly guidelines?: readonly string[];
+  readonly rules?: readonly PolicyRule[];
+}
 
-      const absolutePath = path.resolve(filePath);
-      const fileContent = await fs.readFile(absolutePath, 'utf8');
-      
-      const parsed = yaml.load(fileContent) as PolicyFile;
-      
-      if (!this.validatePolicyFile(parsed)) {
-        throw new Error(`Invalid policy file format: ${filePath}`);
-      }
+interface PolicyFile {
+  readonly policies: RawYAMLPolicy[];
+}
 
-      // Cache the loaded file
-      this.loadedPolicies.set(filePath, parsed);
-      
-      return parsed;
-    } catch (error) {
-      if (error instanceof Error && error.message.includes('ENOENT')) {
-        throw new Error(`Policy file not found: ${filePath}`);
-      }
-      throw new Error(`Failed to load policy file: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
+function validateRawPolicy(p: Record<string, unknown>): boolean {
+  if (!p.id || typeof p.id !== 'string') return false;
+  if (!p.name || typeof p.name !== 'string') return false;
+  if (!p.direction || !['inbound', 'outbound', 'both'].includes(p.direction as string)) return false;
+  if (!p.action || !['block', 'allow'].includes(p.action as string)) return false;
+  return true;
+}
 
-  async loadFromJSON(filePath: string): Promise<PolicyFile> {
-    try {
-      const absolutePath = path.resolve(filePath);
-      const fileContent = await fs.readFile(absolutePath, 'utf8');
-      
-      const parsed = JSON.parse(fileContent) as PolicyFile;
-      
-      if (!this.validatePolicyFile(parsed)) {
-        throw new Error(`Invalid policy file format: ${filePath}`);
-      }
-
-      this.loadedPolicies.set(filePath, parsed);
-      return parsed;
-    } catch (error) {
-      throw new Error(`Failed to load JSON policy file: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-
-  async loadFromAPI(endpoint?: string): Promise<PolicyFile> {
-    if (!this.apiConfig && !endpoint) {
-      throw new Error('API configuration not provided');
-    }
-
-    const apiEndpoint = endpoint || this.apiConfig!.endpoint;
-    const apiKey = this.apiConfig?.apiKey;
-
-    try {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-
-      if (apiKey) {
-        headers['Authorization'] = `Bearer ${apiKey}`;
-      }
-
-      const response = await fetch(apiEndpoint, {
-        method: 'GET',
-        headers,
-      });
-
-      if (!response.ok) {
-        throw new Error(`API request failed: ${response.status} ${response.statusText}`);
-      }
-
-      const policyFile = await response.json() as PolicyFile;
-      
-      if (!this.validatePolicyFile(policyFile)) {
-        throw new Error('Invalid policy file format from API');
-      }
-
-      return policyFile;
-    } catch (error) {
-      throw new Error(`Failed to load policies from API: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-
-  compilePolicies(policies: PolicyDefinition[]): CompiledPolicy[] {
-    return policies.map(policy => this.compilePolicy(policy));
-  }
-
-  private compilePolicy(policy: PolicyDefinition): CompiledPolicy {
-    const compiled: CompiledPolicy = { ...policy };
-
-    // Compile regex patterns
-    if (policy.patterns && policy.patterns.length > 0) {
-      compiled.compiledPatterns = policy.patterns.map(pattern => 
-        this.cache.compileWithCache(pattern)
-      );
-    }
-
-    // Compile domain patterns
-    if (policy.domains && policy.domains.length > 0) {
-      compiled.domainPatterns = policy.domains.map(domain => 
-        this.cache.compileDomainPattern(domain)
-      );
-    }
-
-    return compiled;
-  }
-
-  private validatePolicyFile(policyFile: any): policyFile is PolicyFile {
-    if (!policyFile || typeof policyFile !== 'object') {
-      return false;
-    }
-
-    if (!policyFile.version || typeof policyFile.version !== 'string') {
-      return false;
-    }
-
-    if (!Array.isArray(policyFile.policies)) {
-      return false;
-    }
-
-    // Validate each policy
-    for (const policy of policyFile.policies) {
-      if (!this.validatePolicy(policy)) {
-        return false;
-      }
-    }
-
-    return true;
-  }
-
-  private validatePolicy(policy: any): policy is PolicyDefinition {
-    if (!policy || typeof policy !== 'object') {
-      return false;
-    }
-
-    const requiredFields = ['id', 'name', 'direction', 'description', 'action'];
-    for (const field of requiredFields) {
-      if (!policy[field] || typeof policy[field] !== 'string') {
-        return false;
-      }
-    }
-
-    const validDirections = ['inbound', 'outbound', 'both'];
-    if (!validDirections.includes(policy.direction)) {
-      return false;
-    }
-
-    const validActions = ['block', 'warn', 'allow'];
-    if (!validActions.includes(policy.action)) {
-      return false;
-    }
-
-    if (policy.severity) {
-      const validSeverities = ['low', 'medium', 'high', 'critical'];
-      if (!validSeverities.includes(policy.severity)) {
-        return false;
-      }
-    }
-
-    if (policy.patterns && !Array.isArray(policy.patterns)) {
-      return false;
-    }
-
-    if (policy.domains && !Array.isArray(policy.domains)) {
-      return false;
-    }
-
-    if (policy.guidelines && !Array.isArray(policy.guidelines)) {
-      return false;
-    }
-
-    return true;
-  }
-
-  async loadDefault(): Promise<PolicyFile> {
-    // Module-relative paths for both ESM and CJS
-    const moduleDir = typeof __dirname !== 'undefined'
-      ? __dirname
-      : path.dirname(fileURLToPath(import.meta.url));
-
-    // Try paths in priority order:
-    // 1. dist/guardrails/ (npm package structure)
-    // 2. src/guardrails/ (development structure)
-    // 3. Legacy paths (backward compatibility)
-    const possiblePaths = [
-      // Production paths (npm package after build)
-      path.join(moduleDir, 'guardrails/default_policies.yaml'), // Same directory structure
-      path.join(moduleDir, '../guardrails/default_policies.yaml'),
-      path.join(moduleDir, '../../guardrails/default_policies.yaml'),
-      path.join(moduleDir, 'default_policies.yaml'),
-
-      // Development paths (running from src/)
-      path.join(moduleDir, '../src/guardrails/default_policies.yaml'),
-      path.join(process.cwd(), 'src/guardrails/default_policies.yaml'),
-
-      // Legacy paths (backward compatibility)
-      './src/guardrails/default_policies.yaml',
-      './guardrails/default_policies.yaml',
-      '../guardrails/default_policies.yaml',
-    ];
-
-    for (const filePath of possiblePaths) {
-      try {
-        return await this.loadFromYAML(filePath);
-      } catch (error) {
-        // Continue to next path
-        continue;
-      }
-    }
-
-    throw new Error('Could not find default policies file in any expected location. Searched paths: ' + possiblePaths.join(', '));
-  }
-
-  clearCache(): void {
-    this.cache.clear();
-    this.loadedPolicies.clear();
-  }
-
-  getCacheStats() {
+/**
+ * Transform a flat YAML policy (patterns/domains at top level) into PolicyDefinition
+ * with rules array.
+ */
+function transformYAMLPolicy(raw: RawYAMLPolicy): PolicyDefinition {
+  // If already has rules array, use it directly
+  if (raw.rules && raw.rules.length > 0) {
     return {
-      cache: this.cache.getStats(),
-      loadedFiles: this.loadedPolicies.size,
+      name: raw.name,
+      description: raw.description,
+      direction: raw.direction as PolicyDefinition['direction'],
+      rules: raw.rules,
     };
   }
+
+  // Transform flat YAML format into a single rule with all patterns/keywords
+  const rule: PolicyRule = {
+    id: raw.id,
+    name: raw.name,
+    description: raw.description,
+    action: raw.action as PolicyRule['action'],
+    keywords: raw.domains,
+    message: raw.guidelines?.[0],
+  };
+
+  // Create separate rules for each pattern (so each gets its own compiled regex)
+  const rules: PolicyRule[] = [];
+
+  if (raw.patterns && raw.patterns.length > 0) {
+    for (const pattern of raw.patterns) {
+      rules.push({
+        ...rule,
+        id: `${raw.id}_pattern`,
+        pattern,
+      });
+    }
+  }
+
+  // If no patterns but has domains, create a single rule with keywords only
+  if (rules.length === 0) {
+    rules.push(rule);
+  } else if (raw.domains && raw.domains.length > 0) {
+    // Add keywords to the first rule
+    (rules as any)[0] = { ...rules[0], keywords: raw.domains };
+  }
+
+  return {
+    name: raw.name,
+    description: raw.description,
+    direction: raw.direction as PolicyDefinition['direction'],
+    rules,
+  };
+}
+
+export function loadPoliciesFromYAML(filePath: string): PolicyDefinition[] {
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const data = yaml.load(content) as PolicyFile;
+    if (!data?.policies || !Array.isArray(data.policies)) return [];
+    return data.policies
+      .filter((p: any) => validateRawPolicy(p))
+      .map(transformYAMLPolicy);
+  } catch {
+    return [];
+  }
+}
+
+export function loadDefaultPolicies(): PolicyDefinition[] {
+  const candidates = [
+    // dist path (production)
+    path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'dist', 'guardrails', 'default_policies.yaml'),
+    // src path (development)
+    path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'default_policies.yaml'),
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) {
+        return loadPoliciesFromYAML(candidate);
+      }
+    } catch {
+      continue;
+    }
+  }
+  return [];
+}
+
+export async function loadPoliciesFromAPI(
+  endpoint: string,
+  apiKey?: string,
+): Promise<PolicyDefinition[]> {
+  try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+
+    const response = await fetch(endpoint, { headers });
+    if (!response.ok) return [];
+    const data = (await response.json()) as PolicyFile;
+    if (!data?.policies || !Array.isArray(data.policies)) return [];
+    return data.policies.filter((p: any) => validateRawPolicy(p)).map(transformYAMLPolicy);
+  } catch {
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Policy compilation
+// ---------------------------------------------------------------------------
+
+export function compilePolicies(policies: PolicyDefinition[]): CompiledPolicy[] {
+  return policies.map((definition) => {
+    const compiledPatterns: RegExp[] = [];
+    const domainPatterns: RegExp[] = [];
+    const domains: string[] = [];
+
+    for (const rule of definition.rules ?? []) {
+      if (rule.pattern) {
+        compiledPatterns.push(cache.compilePattern(rule.pattern));
+      }
+      if (rule.keywords) {
+        for (const kw of rule.keywords) {
+          domainPatterns.push(cache.compileDomainPattern(kw));
+          domains.push(kw);
+        }
+      }
+    }
+
+    return { definition, compiledPatterns, domainPatterns, domains };
+  });
 }

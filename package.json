@@ -88,17 +88,14 @@
   "homepage": "https://github.com/kliraai/kliraai-js#readme",
   "dependencies": {
     "@opentelemetry/api": "^1.9.0",
-    "@opentelemetry/auto-instrumentations-node": "^0.50.0",
-    "@opentelemetry/exporter-metrics-otlp-proto": "^0.207.0",
+    "@opentelemetry/context-async-hooks": "^2.0.0",
+    "@opentelemetry/core": "^2.0.0",
     "@opentelemetry/exporter-trace-otlp-proto": "^0.207.0",
-    "@opentelemetry/instrumentation": "^0.207.0",
     "@opentelemetry/resources": "^2.2.0",
-    "@opentelemetry/sdk-metrics": "^2.2.0",
-    "@opentelemetry/sdk-node": "^0.207.0",
+    "@opentelemetry/sdk-trace-base": "^2.0.0",
     "@opentelemetry/semantic-conventions": "^1.29.0",
     "fast-levenshtein": "^3.0.0",
-    "js-yaml": "^4.1.0",
-    "zod": "^3.23.8"
+    "js-yaml": "^4.1.0"
   },
   "peerDependencies": {
     "@ai-sdk/anthropic": ">=0.0.1",
@@ -155,27 +152,31 @@
   "size-limit": [
     {
       "name": "Core SDK (ESM)",
-      "path": "dist/index.mjs",
+      "path": "dist/index.js",
       "limit": "150 KB",
-      "import": "{ KliraAI }"
+      "import": "{ Klira }",
+      "ignore": ["async_hooks", "events", "fs", "path", "url", "crypto", "http", "https", "net", "tls", "zlib", "stream", "buffer", "util", "os"]
     },
     {
       "name": "OpenAI Adapter (ESM)",
-      "path": "dist/adapters/openai/index.mjs",
+      "path": "dist/adapters/openai/index.js",
       "limit": "75 KB",
-      "import": "{ createKliraOpenAI }"
+      "import": "{ createOpenAIAdapter }",
+      "ignore": ["async_hooks", "events", "fs", "path", "url", "crypto", "http", "https", "net", "tls", "zlib", "stream", "buffer", "util", "os"]
     },
     {
       "name": "Custom Adapter (ESM)",
-      "path": "dist/adapters/custom/index.mjs",
+      "path": "dist/adapters/custom/index.js",
       "limit": "60 KB",
-      "import": "{ createKliraAgent }"
+      "import": "{ createCustomAdapter }",
+      "ignore": ["async_hooks", "events", "fs", "path", "url", "crypto", "http", "https", "net", "tls", "zlib", "stream", "buffer", "util", "os"]
     },
     {
       "name": "LangChain Adapter (ESM)",
-      "path": "dist/adapters/langchain/index.mjs",
+      "path": "dist/adapters/langchain/index.js",
       "limit": "50 KB",
-      "import": "{ KliraLangChainCallbacks }"
+      "import": "{ createLangChainAdapter }",
+      "ignore": ["async_hooks", "events", "fs", "path", "url", "crypto", "http", "https", "net", "tls", "zlib", "stream", "buffer", "util", "os"]
     }
   ]
 }
