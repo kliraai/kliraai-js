@@ -5,6 +5,7 @@
  * Creates klira.evals.test_case spans for each case.
  */
 
+import { randomUUID } from 'node:crypto';
 import { SpanStatusCode } from '@opentelemetry/api';
 import { getTracer } from '../observability/pipeline.js';
 import type {
@@ -43,7 +44,7 @@ export async function evaluate(
 ): Promise<KliraEvalSummary> {
   const tracer = getTracer();
   const comparator = options?.comparator ?? defaultComparator;
-  const runId = options?.runId ?? crypto.randomUUID();
+  const runId = options?.runId ?? randomUUID();
   const results: KliraEvalResult[] = [];
 
   let caseIndex = 0;
