@@ -17,7 +17,8 @@ describe('Config v2', () => {
       const config = createConfig({ appName: 'test-app' });
       expect(config.appName).toBe('test-app');
       expect(config.tracingEnabled).toBe(true);
-      expect(config.endpoint).toBe('https://api.getklira.com/v1/traces');
+      // PROD-764 phase 6: endpoint is now a base URL; /v1/traces appended at export time.
+      expect(config.endpoint).toBe('https://api.getklira.com');
       expect(config.guardrails.fastRulesEnabled).toBe(true);
       expect(config.guardrails.augmentationEnabled).toBe(true);
       expect(config.guardrails.llmFallbackEnabled).toBe(false);

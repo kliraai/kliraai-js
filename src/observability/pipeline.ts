@@ -25,6 +25,9 @@ import { KliraOTLPSpanExporter } from './exporter.js';
 import { createKliraBatchProcessor } from './processor.js';
 import { NoneAttributeFilterProcessor } from './none-attribute-filter-processor.js';
 import { KliraFilteringExporter } from './filtering-exporter.js';
+import { PhiAwareExporter } from '../healthcare/phi-exporter.js';
+import { PhiMethod } from '../contracts/phi-pipeline.js';
+import type { PhiAnonymizationMethod } from '../types/index.js';
 
 let provider: BasicTracerProvider | null = null;
 let processor: SpanProcessor | null = null;
@@ -38,6 +41,17 @@ function takeoverGlobalTracerProvider(): void {
     disable?: () => void;
   };
   traceApi.disable?.();
+}
+
+function phiMethodFromConfig(method: PhiAnonymizationMethod): PhiMethod {
+  switch (method) {
+    case 'mask': return PhiMethod.MASK;
+    case 'hash': return PhiMethod.HASH;
+    case 'remove': return PhiMethod.REPLACE;
+    case 'redact':
+    default:
+      return PhiMethod.REDACT;
+  }
 }
 
 export function initPipeline(config: Readonly<KliraConfig>): Tracer {
@@ -55,11 +69,26 @@ export function initPipeline(config: Readonly<KliraConfig>): Tracer {
   const otlp = new KliraOTLPSpanExporter({
     endpoint: config.endpoint,
     apiKey: config.apiKey,
+    evalsRun: config.evalsRun,
   });
-  const filtering = new KliraFilteringExporter(otlp);
+
+  // Wire PHI scrubbing in front of the OTLP exporter when anonymization
+  // is configured. The scanner is constructed eagerly so a misconfigured
+  // anonymizer fails closed at init() rather than at first export.
+  let downstream: typeof otlp | PhiAwareExporter = otlp;
+  if (config.anonymization) {
+    downstream = new PhiAwareExporter({
+      delegate: otlp,
+      method: phiMethodFromConfig(config.anonymization),
+    });
+  }
+
+  const filtering = new KliraFilteringExporter(downstream);
 
   const noneFilter = new NoneAttributeFilterProcessor();
-  const batch = createKliraBatchProcessor(filtering);
+  const batch = createKliraBatchProcessor(filtering, {
+    scheduledDelayMillis: config.batchDelayMs,
+  });
   processor = batch;
 
   const contextManager = new AsyncLocalStorageContextManager();
