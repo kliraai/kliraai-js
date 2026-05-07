@@ -94,10 +94,14 @@ export interface UserMessageOptions {
   userId: string;
   conversationId: string;
   messageId: string;
+  /** Framework label propagated onto every child span (e.g. "langchain"). */
+  framework?: string;
 }
 
 export interface ToolOptions {
   fhirResourceType?: string;
+  /** Alias for `fhirResourceType`. Matches Python `@tool(fhir="Patient")`. */
+  fhir?: string;
 }
 
 // ---------------------------------------------------------------------------

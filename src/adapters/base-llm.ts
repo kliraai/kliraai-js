@@ -5,22 +5,23 @@
  * Truncates prompt to 10k chars, output to 5k chars per contract.
  */
 
-import { type Span, SpanStatusCode } from '@opentelemetry/api';
-import { getTracer } from '../observability/pipeline.js';
+import { type Span } from '@opentelemetry/api';
 import {
   PROMPT_TRUNCATION_LIMIT,
   OUTPUT_TRUNCATION_LIMIT,
 } from '../contracts/adapter-interfaces.js';
 import type { LLMCallOptions, LLMCallResult } from '../types/index.js';
+import { withSpan } from '../wrappers/context.js';
 
 // ---------------------------------------------------------------------------
 // Span creation
 // ---------------------------------------------------------------------------
 
 /**
- * Run an LLM call inside a `klira.llm.{provider}` span.
- *
- * Sets `gen_ai.*` attributes from request and response.
+ * Run an LLM call inside a `klira.llm.{provider}` span. Delegates to the
+ * shared `withSpan` helper so LLM spans pick up the same `klira.user_id`
+ * / `klira.conversation_id` / `klira.framework` runtime attributes the
+ * wrappers apply.
  */
 export async function withLLMSpan<T>(
   provider: string,
@@ -28,35 +29,29 @@ export async function withLLMSpan<T>(
   fn: (span: Span) => Promise<T>,
   extractResult?: (response: T) => LLMCallResult,
 ): Promise<T> {
-  const tracer = getTracer();
-  const spanName = `klira.llm.${provider}`;
-
-  return tracer.startActiveSpan(spanName, async (span: Span) => {
-    try {
-      // Set request attributes
-      setRequestAttributes(span, provider, options);
-
-      const response = await fn(span);
-
-      // Set response attributes
-      if (extractResult) {
-        const result = extractResult(response);
-        setResponseAttributes(span, result);
+  const result = withSpan(
+    `klira.llm.${provider}`,
+    {
+      'klira.entity_type': 'llm',
+      'klira.entity_name': provider,
+      'gen_ai.system': provider.toLowerCase(),
+      'gen_ai.request.model': options.model,
+    },
+    async (span) => {
+      // Capture prompt (truncated) on the active span.
+      if (options.messages && options.messages.length > 0) {
+        const promptText = messagesToText(options.messages);
+        span.setAttribute('klira.input', truncate(promptText, PROMPT_TRUNCATION_LIMIT));
       }
 
-      span.setStatus({ code: SpanStatusCode.OK });
+      const response = await fn(span);
+      if (extractResult) {
+        setResponseAttributes(span, extractResult(response));
+      }
       return response;
-    } catch (error) {
-      span.setStatus({
-        code: SpanStatusCode.ERROR,
-        message: error instanceof Error ? error.message : String(error),
-      });
-      span.recordException(error instanceof Error ? error : new Error(String(error)));
-      throw error;
-    } finally {
-      span.end();
-    }
-  });
+    },
+  );
+  return (await result) as T;
 }
 
 // ---------------------------------------------------------------------------

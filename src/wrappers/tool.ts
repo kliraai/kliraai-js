@@ -20,8 +20,9 @@ export function tool<TArgs extends unknown[], TReturn>(
       'klira.entity_name': name,
     };
 
-    if (options?.fhirResourceType) {
-      attrs['klira.fhir.resource_type'] = options.fhirResourceType;
+    const fhirResource = options?.fhirResourceType ?? options?.fhir;
+    if (fhirResource) {
+      attrs['klira.fhir.resource_type'] = fhirResource;
     }
 
     const result = withSpan(

@@ -29,16 +29,23 @@ describe('Wrappers v2', () => {
   });
 
   describe('workflow()', () => {
-    it('creates a klira.workflow.{name} span', async () => {
+    it('creates a klira.workflow.{name} span and auto-creates a user.message root', async () => {
+      // PROD-764 phase 3: a bare workflow() outside of userMessage() now
+      // auto-creates a klira.user.message root, matching Python behavior.
       const fn = workflow('test-flow', async (input: string) => input.toUpperCase());
       const result = await fn('hello');
 
       expect(result).toBe('HELLO');
       const spans = exporter.getFinishedSpans();
-      expect(spans).toHaveLength(1);
-      expect(spans[0].name).toBe('klira.workflow.test-flow');
-      expect(spans[0].attributes['klira.entity_type']).toBe('workflow');
-      expect(spans[0].attributes['klira.entity_name']).toBe('test-flow');
+      expect(spans).toHaveLength(2);
+
+      const workflowSpan = spans.find((s) => s.name === 'klira.workflow.test-flow')!;
+      expect(workflowSpan.attributes['klira.entity_type']).toBe('workflow');
+      expect(workflowSpan.attributes['klira.entity_name']).toBe('test-flow');
+
+      const rootSpan = spans.find((s) => s.name === 'klira.user.message')!;
+      expect(rootSpan).toBeDefined();
+      expect(rootSpan.attributes['klira.user_id']).toBe('anonymous');
     });
 
     it('captures output truncated to 500 chars', async () => {
@@ -147,16 +154,19 @@ describe('Wrappers v2', () => {
       expect(result).toBe('found');
 
       const spans = exporter.getFinishedSpans();
-      expect(spans).toHaveLength(4);
+      // 4 wrappers + the auto-created klira.user.message root (PROD-764 phase 3).
+      expect(spans).toHaveLength(5);
 
       const toolSpan = spans.find(s => s.name === 'klira.tool.search')!;
       const taskSpan = spans.find(s => s.name === 'klira.task.process')!;
       const agentSpan = spans.find(s => s.name === 'klira.agent.my-agent')!;
       const workflowSpan = spans.find(s => s.name === 'klira.workflow.main')!;
+      const userMessageSpan = spans.find(s => s.name === 'klira.user.message')!;
 
       expect(toolSpan.parentSpanContext?.spanId).toBe(taskSpan.spanContext().spanId);
       expect(taskSpan.parentSpanContext?.spanId).toBe(agentSpan.spanContext().spanId);
       expect(agentSpan.parentSpanContext?.spanId).toBe(workflowSpan.spanContext().spanId);
+      expect(workflowSpan.parentSpanContext?.spanId).toBe(userMessageSpan.spanContext().spanId);
     });
 
     it('userMessage > workflow creates correct hierarchy', async () => {
