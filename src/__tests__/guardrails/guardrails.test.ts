@@ -437,6 +437,36 @@ describe('Policy loader', () => {
       expect(policies.length).toBe(1);
       expect(policies[0].name).toBe('Env One');
     });
+
+    // PROD-764 — YAML alias rejection (billion-laughs / DoS hardening)
+    it('rejects YAML aliases / anchors and returns empty + warns', () => {
+      const file = join(tmpDir, 'aliases.yaml');
+      writeFileSync(
+        file,
+        `defaults: &default
+  direction: inbound
+  action: block
+policies:
+  - id: alias-1
+    name: With Anchor
+    <<: *default
+    patterns:
+      - "x"
+`,
+      );
+
+      const warnings: string[] = [];
+      const originalWarn = console.warn;
+      console.warn = (...args: unknown[]) => { warnings.push(args.map(String).join(' ')); };
+
+      try {
+        const policies = loadPoliciesFromYAML(file);
+        expect(policies).toEqual([]);
+        expect(warnings.some((w) => w.includes('aliases'))).toBe(true);
+      } finally {
+        console.warn = originalWarn;
+      }
+    });
   });
 });
 

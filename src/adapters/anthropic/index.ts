@@ -7,10 +7,11 @@
 
 import {
   withLLMSpan,
-  augmentMessages,
 } from '../base-llm.js';
 import type { LLMCallResult } from '../../types/index.js';
 import { isPatched, markPatched } from '../sentinel.js';
+import { getAndClearGuidelines } from '../../guardrails/guideline-context.js';
+import { buildAugmentedSystemKwarg } from '../../guardrails/augmentation.js';
 
 const PROVIDER = 'anthropic';
 
@@ -39,13 +40,17 @@ export function createAnthropicAdapter<T extends { messages: { create: (...args:
 
   const instrumentedCreate = async (params: any, ...rest: any[]) => {
     const model = params.model ?? 'unknown';
-    let messages = params.messages ?? [];
+    const messages = params.messages ?? [];
 
-    if (options?.guidelines && options.guidelines.length > 0) {
-      messages = augmentMessages(messages, options.guidelines);
+    // Anthropic injects guidelines into the native `system` kwarg, not
+    // a synthetic system message — Python parity.
+    const dynamic = getAndClearGuidelines();
+    const guidelines = dynamic ?? options?.guidelines ?? [];
+    let finalParams: any = { ...params };
+    if (guidelines.length > 0) {
+      finalParams.system = buildAugmentedSystemKwarg(params.system, guidelines);
     }
-
-    const finalParams = { ...params, messages };
+    finalParams.messages = messages;
 
     // Streaming
     if (params.stream) {

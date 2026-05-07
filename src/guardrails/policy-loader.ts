@@ -155,9 +155,34 @@ function transformYAMLPolicy(raw: RawYAMLPolicy): PolicyDefinition {
   };
 }
 
+/**
+ * Reject YAML aliases / anchors before parsing — Python parity hardening.
+ *
+ * Aliases let one node be referenced from another, which is a known
+ * billion-laughs / DoS vector and lets a hostile policy file expand to
+ * arbitrary size in memory. Klira policies don't need them; if a file
+ * uses them we drop the load and warn rather than risk the parse.
+ *
+ * Lexical detection on the raw source intentionally over-rejects
+ * (matches inside string literals too). That's fine — a Klira policy
+ * has no legitimate reason to embed a literal `*name` token.
+ */
+function containsYamlAliases(content: string): boolean {
+  // Strip comments before scanning to avoid `# anchor &foo` false positives.
+  const stripped = content.replace(/#[^\n]*/g, '');
+  // `&anchor` or `*alias` as a YAML node (preceded by whitespace or `:` and a space).
+  return /(^|[\s:])[&*][A-Za-z_][\w-]*/m.test(stripped);
+}
+
 export function loadPoliciesFromYAML(filePath: string): PolicyDefinition[] {
   try {
     const content = fs.readFileSync(filePath, 'utf-8');
+    if (containsYamlAliases(content)) {
+      console.warn(
+        `[Klira] YAML aliases / anchors are not allowed in policy files (${filePath}); ignoring.`,
+      );
+      return [];
+    }
     const data = yaml.load(content);
     return unwrapPolicies(data)
       .filter((p: any) => validateRawPolicy(p))

@@ -16,6 +16,8 @@ import {
 } from './config/index.js';
 import { initPipeline, shutdownPipeline, resetPipeline } from './observability/pipeline.js';
 import { autoPatchInstalledLLMs } from './adapters/auto-patch.js';
+import { GuardrailsEngine } from './guardrails/engine.js';
+import { BuiltInLLMFallbackEvaluator } from './guardrails/llm-fallback.js';
 
 // ---------------------------------------------------------------------------
 // Klira — static class (renamed from KliraAI)
@@ -62,6 +64,28 @@ export class Klira {
       // Best-effort auto-patch installed LLM SDKs (Python parity).
       await autoPatchInstalledLLMs();
 
+      // Wire the built-in LLM fallback evaluator onto the singleton
+      // engine when the customer configured a provider.
+      if (config.llmFallback.provider) {
+        const engine = GuardrailsEngine.getInstance({
+          llmFallbackEnabled: true,
+          llmService: new BuiltInLLMFallbackEvaluator({
+            provider: config.llmFallback.provider,
+            model: config.llmFallback.model,
+            apiKey: config.llmFallback.apiKey,
+            onError: config.llmFallback.onError,
+          }),
+        });
+        // The engine constructor only configures the service when provided
+        // before getInstance(); if the singleton already existed, attach now.
+        engine['llmFallback'].configureBuiltIn({
+          provider: config.llmFallback.provider,
+          model: config.llmFallback.model,
+          apiKey: config.llmFallback.apiKey,
+          onError: config.llmFallback.onError,
+        });
+      }
+
       Klira._initialized = true;
       logger.info('Klira SDK v2 initialized');
 
@@ -97,6 +121,7 @@ export class Klira {
     Klira._config = null;
     resetGlobalConfig();
     resetPipeline();
+    GuardrailsEngine.reset();
   }
 }
 

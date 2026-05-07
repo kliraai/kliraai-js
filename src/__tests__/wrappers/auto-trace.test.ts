@@ -12,6 +12,7 @@ import { context, trace } from '@opentelemetry/api';
 import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-hooks';
 
 import { workflow, agent, task, tool, userMessage } from '../../wrappers/index.js';
+import { setGlobalConfig, resetGlobalConfig, createConfig } from '../../config/index.js';
 
 let exporter: InMemorySpanExporter;
 let provider: BasicTracerProvider;
@@ -93,6 +94,64 @@ describe('runtime attribute propagation', () => {
     const spans = exporter.getFinishedSpans();
     const toolSpan = spans.find((s) => s.name === 'klira.tool.search');
     expect(toolSpan!.attributes['klira.user_id']).toBeUndefined();
+  });
+});
+
+describe('root-span tagging from globalConfig', () => {
+  afterEach(() => resetGlobalConfig());
+
+  it('stamps klira.evals.evals_run / klira.evals.dataset_id when configured', async () => {
+    setGlobalConfig(createConfig({ appName: 't', evalsRun: 'run-7', datasetId: 'ds-3' }));
+
+    const handler = userMessage(
+      { userId: 'u', conversationId: 'c', messageId: 'm' },
+      async () => 'ok',
+    );
+    await handler();
+
+    const spans = exporter.getFinishedSpans();
+    const root = spans.find((s) => s.name === 'klira.user.message');
+    expect(root!.attributes['klira.evals.evals_run']).toBe('run-7');
+    expect(root!.attributes['klira.evals.dataset_id']).toBe('ds-3');
+  });
+
+  it('stamps klira.healthcare.clinical_domain when configured', async () => {
+    setGlobalConfig(createConfig({ appName: 't', clinicalDomain: 'clinical_notes' }));
+
+    const handler = userMessage(
+      { userId: 'u', conversationId: 'c', messageId: 'm' },
+      async () => 'ok',
+    );
+    await handler();
+
+    const root = exporter.getFinishedSpans().find((s) => s.name === 'klira.user.message');
+    expect(root!.attributes['klira.healthcare.clinical_domain']).toBe('clinical_notes');
+  });
+
+  it('auto-created root from bare workflow inherits config tagging', async () => {
+    setGlobalConfig(createConfig({ appName: 't', evalsRun: 'run-9', framework: 'pytest' }));
+
+    const fn = workflow('flow', async () => 'ok');
+    await fn();
+
+    const root = exporter.getFinishedSpans().find((s) => s.name === 'klira.user.message');
+    expect(root!.attributes['klira.evals.evals_run']).toBe('run-9');
+    expect(root!.attributes['klira.framework']).toBe('pytest');
+  });
+
+  it('omits the attribute when the config knob is unset', async () => {
+    setGlobalConfig(createConfig({ appName: 't' }));
+
+    const handler = userMessage(
+      { userId: 'u', conversationId: 'c', messageId: 'm' },
+      async () => 'ok',
+    );
+    await handler();
+
+    const root = exporter.getFinishedSpans().find((s) => s.name === 'klira.user.message');
+    expect(root!.attributes['klira.evals.evals_run']).toBeUndefined();
+    expect(root!.attributes['klira.evals.dataset_id']).toBeUndefined();
+    expect(root!.attributes['klira.healthcare.clinical_domain']).toBeUndefined();
   });
 });
 

@@ -155,6 +155,11 @@ export function getGlobalConfig(): Readonly<KliraConfig> {
   return globalConfig;
 }
 
+/** Non-throwing variant for code paths (wrappers) that may run pre-init. */
+export function getGlobalConfigOrNull(): Readonly<KliraConfig> | null {
+  return globalConfig;
+}
+
 export function resetGlobalConfig(): void {
   globalConfig = null;
 }

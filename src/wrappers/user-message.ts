@@ -12,6 +12,7 @@ import type { UserMessageOptions } from '../types/index.js';
 import { getProcessor, getTracer } from '../observability/pipeline.js';
 import { applyRuntimeAttrs } from './context.js';
 import { setKliraContext, markInTrace } from '../tracing/propagation.js';
+import { getGlobalConfigOrNull } from '../config/index.js';
 
 export function userMessage<TArgs extends unknown[], TReturn>(
   options: UserMessageOptions,
@@ -19,27 +20,32 @@ export function userMessage<TArgs extends unknown[], TReturn>(
 ): (...args: TArgs) => Promise<TReturn> {
   return async (...args: TArgs): Promise<TReturn> => {
     const tracer = getTracer();
+    const config = getGlobalConfigOrNull();
+    const framework = options.framework ?? config?.framework;
 
     const baseCtx = setKliraContext(otelContext.active(), {
       userId: options.userId,
       conversationId: options.conversationId,
-      framework: options.framework,
+      framework,
     });
     const ctx = markInTrace(baseCtx);
+
+    const rootAttrs: Record<string, string> = {
+      'klira.entity_type': 'user_message',
+      'klira.entity_name': 'user_message',
+      'klira.user_id': options.userId,
+      'klira.conversation_id': options.conversationId,
+      'klira.message_id': options.messageId,
+    };
+    if (framework) rootAttrs['klira.framework'] = framework;
+    if (config?.evalsRun) rootAttrs['klira.evals.evals_run'] = config.evalsRun;
+    if (config?.datasetId) rootAttrs['klira.evals.dataset_id'] = config.datasetId;
+    if (config?.clinicalDomain) rootAttrs['klira.healthcare.clinical_domain'] = config.clinicalDomain;
 
     return otelContext.with(ctx, () =>
       tracer.startActiveSpan(
         'klira.user.message',
-        {
-          attributes: {
-            'klira.entity_type': 'user_message',
-            'klira.entity_name': 'user_message',
-            'klira.user_id': options.userId,
-            'klira.conversation_id': options.conversationId,
-            'klira.message_id': options.messageId,
-            ...(options.framework ? { 'klira.framework': options.framework } : {}),
-          },
-        },
+        { attributes: rootAttrs },
         async (span) => {
           applyRuntimeAttrs(span);
           try {

@@ -7,10 +7,14 @@
 
 import {
   withLLMSpan,
-  augmentMessages,
 } from '../base-llm.js';
 import type { LLMCallResult } from '../../types/index.js';
 import { isPatched, markPatched } from '../sentinel.js';
+import { getAndClearGuidelines } from '../../guardrails/guideline-context.js';
+import {
+  buildAugmentedMessages,
+  buildAugmentedInstructions,
+} from '../../guardrails/augmentation.js';
 
 const PROVIDER = 'openai';
 
@@ -40,9 +44,12 @@ export function createOpenAIAdapter<T extends { chat: { completions: { create: (
     const model = params.model ?? 'unknown';
     let messages = params.messages ?? [];
 
-    // Augment with guidelines if provided
-    if (options?.guidelines && options.guidelines.length > 0) {
-      messages = augmentMessages(messages, options.guidelines);
+    // Per-call guidelines arrive via AsyncLocalStorage (Phase 5). Constructor
+    // `options.guidelines` is honored as a static fallback for the call.
+    const dynamic = getAndClearGuidelines();
+    const guidelines = dynamic ?? options?.guidelines ?? [];
+    if (guidelines.length > 0) {
+      messages = buildAugmentedMessages(messages, guidelines);
     }
 
     const finalParams = { ...params, messages };
@@ -126,10 +133,20 @@ export function createOpenAIResponsesAdapter<T extends { responses: { create: (.
         ? [{ role: 'user', content: String(params.input) }]
         : [];
 
+    // Inject guidelines into the Responses-API `instructions` kwarg shape.
+    const guidelines = getAndClearGuidelines();
+    let finalParams: any = params;
+    if (guidelines && guidelines.length > 0) {
+      finalParams = {
+        ...params,
+        instructions: buildAugmentedInstructions(params.instructions, guidelines),
+      };
+    }
+
     return withLLMSpan(
       'openai.responses',
       { model, messages },
-      async () => originalCreate(params, ...rest),
+      async () => originalCreate(finalParams, ...rest),
       (response: any): LLMCallResult => ({
         model: response.model ?? model,
         inputTokens: response.usage?.input_tokens,
