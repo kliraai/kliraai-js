@@ -10,17 +10,24 @@ import { getTracer } from '../observability/pipeline.js';
 import type { GuardrailResult } from '../types/index.js';
 import type { GuardrailDecision } from './decision-router.js';
 
+/**
+ * Synchronous compliance audit (PROD-764 parity narrowing of Learning #20).
+ *
+ * **Why synchronous now?** Learning #20 ("never block hot path") still
+ * applies for non-trivial work, but a zero-body audit span — one
+ * `setAttributes` + `end` — costs microseconds and removes the flush-race
+ * risk where a deferred microtask loses its span when the process exits
+ * before the audit fires. Python emits this synchronously; we match.
+ */
 export function scheduleAudit(
   decision: GuardrailDecision,
   result: GuardrailResult,
   direction: 'inbound' | 'outbound',
   parentContext?: ReturnType<typeof context.active>,
 ): void {
-  // Fire-and-forget — never blocks the hot path
-  Promise.resolve().then(() => {
+  try {
     const tracer = getTracer();
     const ctx = parentContext ?? context.active();
-
     const spanName = `klira.compliance.${decision}`;
 
     const span = tracer.startSpan(
@@ -47,7 +54,7 @@ export function scheduleAudit(
 
     span.setStatus({ code: SpanStatusCode.OK });
     span.end();
-  }).catch(() => {
-    // Swallow audit errors — they must never affect the hot path
-  });
+  } catch {
+    // Audit failures must never escape — caller continues.
+  }
 }

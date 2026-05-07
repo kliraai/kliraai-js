@@ -46,11 +46,39 @@ export interface GuardrailsEngineConfig {
 // ---------------------------------------------------------------------------
 
 export class GuardrailsEngine {
+  private static _instance: GuardrailsEngine | null = null;
+
+  /**
+   * Return a process-wide singleton, creating it on first call. Mirrors
+   * Python `GuardrailsEngine._instance`. `withGuardrails` and
+   * `Klira.init()` consume the singleton so a second call doesn't
+   * re-initialize policy state.
+   */
+  static getInstance(config?: GuardrailsEngineConfig): GuardrailsEngine {
+    if (!GuardrailsEngine._instance) {
+      GuardrailsEngine._instance = new GuardrailsEngine(config);
+    }
+    return GuardrailsEngine._instance;
+  }
+
+  static setInstance(engine: GuardrailsEngine): void {
+    GuardrailsEngine._instance = engine;
+  }
+
+  static reset(): void {
+    GuardrailsEngine._instance = null;
+  }
+
   private fastRules: FastRulesEngine;
   private augmentation: PolicyAugmentation;
   private llmFallback: LLMFallbackService;
   private config: GuardrailsEngineConfig;
   private initialized = false;
+  // Promise-chain serializes concurrent evaluate() calls so two callers
+  // don't race the lifecycle (Python parity, PROD-482). Replacing this
+  // chain on each call yields one waiter per call; the chain head is the
+  // active evaluation.
+  private chain: Promise<unknown> = Promise.resolve();
 
   constructor(config: GuardrailsEngineConfig = {}) {
     this.config = {
@@ -133,21 +161,28 @@ export class GuardrailsEngine {
       await this.initialize();
     }
 
-    const tracer = getTracer();
-    const spanName =
-      direction === 'inbound'
-        ? 'klira.guardrails.input'
-        : 'klira.guardrails.output';
+    // Serialize through the per-engine chain so two callers can't tear
+    // lifecycle state. Each new call attaches behind the current head.
+    const next = this.chain.then(async () => {
+      const tracer = getTracer();
+      const spanName =
+        direction === 'inbound'
+          ? 'klira.guardrails.input'
+          : 'klira.guardrails.output';
 
-    return tracer.startActiveSpan(spanName, async (span: Span) => {
-      try {
-        return await this.runLifecycle(content, direction, span);
-      } catch (error) {
-        span.setStatus({ code: SpanStatusCode.ERROR, message: String(error) });
-        span.end();
-        return this.handleFailure(error, direction);
-      }
+      return tracer.startActiveSpan(spanName, async (span: Span) => {
+        try {
+          return await this.runLifecycle(content, direction, span);
+        } catch (error) {
+          span.setStatus({ code: SpanStatusCode.ERROR, message: String(error) });
+          span.end();
+          return this.handleFailure(error, direction);
+        }
+      });
     });
+    // Swallow this run's error on the chain so it doesn't poison waiters.
+    this.chain = next.catch(() => undefined);
+    return next;
   }
 
   private async runLifecycle(

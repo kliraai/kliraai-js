@@ -153,6 +153,7 @@ export { getTracer } from './observability/pipeline.js';
 
 // Re-export wrappers
 export { workflow, agent, task, tool, userMessage } from './wrappers/index.js';
+export { withGuardrails } from './wrappers/guardrails.js';
 
 // Default export
 export default Klira;
