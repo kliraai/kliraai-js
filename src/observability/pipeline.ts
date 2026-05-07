@@ -30,7 +30,6 @@ export function initPipeline(config: Readonly<KliraConfig>): Tracer {
     [ATTR_SERVICE_VERSION]: SCHEMA_VERSION,
     'klira.sdk.name': 'klira-js',
     'klira.sdk.version': '2.0.0',
-    'klira.schema.version': SCHEMA_VERSION,
   });
 
   const exporter = createKliraExporter({

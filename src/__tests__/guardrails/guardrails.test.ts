@@ -12,7 +12,10 @@ import { FastRulesEngine } from '../../guardrails/fast-rules.js';
 import { PolicyAugmentation } from '../../guardrails/policy-augmentation.js';
 import { FuzzyMatcher } from '../../guardrails/fuzzy-matcher.js';
 import { routeDecision } from '../../guardrails/decision-router.js';
-import { compilePolicies, loadDefaultPolicies } from '../../guardrails/policy-loader.js';
+import { compilePolicies, loadDefaultPolicies, loadPoliciesFromYAML } from '../../guardrails/policy-loader.js';
+import { writeFileSync, mkdtempSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import {
   GuardrailLifecycle,
   GuardrailState,
@@ -335,14 +338,14 @@ describe('routeDecision', () => {
     expect(decision).toBe('augmented');
   });
 
-  it('sets direction to output for outbound', () => {
+  it('sets direction to outbound for outbound', () => {
     const { result } = routeDecision(
       { matches: [], blocked: false, allowed: true },
       [],
       'outbound',
       3,
     );
-    expect(result.direction).toBe('output');
+    expect(result.direction).toBe('outbound');
   });
 });
 
@@ -377,6 +380,63 @@ describe('Policy loader', () => {
         expect(['block', 'allow']).toContain(rule.action);
       }
     }
+  });
+
+  // PROD-764 Phase 1 — Python-compatible policy YAML shapes
+  describe('accepts both bare-list and envelope (Python parity)', () => {
+    let tmpDir: string;
+
+    beforeEach(() => {
+      tmpDir = mkdtempSync(join(tmpdir(), 'klira-policy-'));
+    });
+
+    afterEach(() => {
+      rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('loads policies from a bare list YAML', () => {
+      const file = join(tmpDir, 'bare.yaml');
+      writeFileSync(
+        file,
+        `- id: bare-1
+  name: Bare One
+  direction: inbound
+  action: block
+  patterns:
+    - "secret"
+- id: bare-2
+  name: Bare Two
+  direction: outbound
+  action: allow
+  domains:
+    - "diagnosis"
+`,
+      );
+
+      const policies = loadPoliciesFromYAML(file);
+      expect(policies.length).toBe(2);
+      expect(policies[0].name).toBe('Bare One');
+      expect(policies[1].name).toBe('Bare Two');
+    });
+
+    it('loads policies from envelope shape', () => {
+      const file = join(tmpDir, 'envelope.yaml');
+      writeFileSync(
+        file,
+        `policies:
+  - id: env-1
+    name: Env One
+    direction: inbound
+    action: block
+    patterns:
+      - "secret"
+`,
+      );
+
+      const policies = loadPoliciesFromYAML(file);
+      expect(policies.length).toBe(1);
+      expect(policies[0].name).toBe('Env One');
+    });
   });
 });
 
@@ -490,6 +550,49 @@ describe('GuardrailsEngine', () => {
     const result = await engine.evaluateInput('test');
     expect(engine.isInitialized()).toBe(true);
     expect(result.allowed).toBe(true);
+  });
+
+  // PROD-764 Phase 1 — wire-format parity with Python
+  it('emits klira.compliance.direction (not klira.guardrails.direction) with inbound/outbound values', async () => {
+    const engine = new GuardrailsEngine();
+    engine['fastRules'].initialize(createTestPolicies());
+    engine['initialized'] = true;
+
+    await engine.evaluateInput('Hello world');
+    await engine.evaluateOutput('Safe output');
+
+    const spans = exporter.getFinishedSpans();
+    const input = spans.find((s) => s.name === 'klira.guardrails.input');
+    const output = spans.find((s) => s.name === 'klira.guardrails.output');
+
+    expect(input!.attributes['klira.compliance.direction']).toBe('inbound');
+    expect(input!.attributes['klira.guardrails.direction']).toBeUndefined();
+    expect(output!.attributes['klira.compliance.direction']).toBe('outbound');
+    expect(output!.attributes['klira.guardrails.direction']).toBeUndefined();
+  });
+
+  it('sets klira.entity_name = "guardrails" on guardrails parent spans', async () => {
+    const engine = new GuardrailsEngine();
+    engine['fastRules'].initialize(createTestPolicies());
+    engine['initialized'] = true;
+
+    await engine.evaluateInput('Hello world');
+
+    const spans = exporter.getFinishedSpans();
+    const input = spans.find((s) => s.name === 'klira.guardrails.input');
+    expect(input!.attributes['klira.entity_name']).toBe('guardrails');
+  });
+
+  it('GuardrailResult.direction reports inbound/outbound (Python parity)', async () => {
+    const engine = new GuardrailsEngine();
+    engine['fastRules'].initialize(createTestPolicies());
+    engine['initialized'] = true;
+
+    const inResult = await engine.evaluateInput('Hello');
+    const outResult = await engine.evaluateOutput('World');
+
+    expect(inResult.direction).toBe('inbound');
+    expect(outResult.direction).toBe('outbound');
   });
 });
 

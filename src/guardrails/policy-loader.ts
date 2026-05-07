@@ -80,8 +80,17 @@ interface RawYAMLPolicy {
   readonly rules?: readonly PolicyRule[];
 }
 
-interface PolicyFile {
+interface PolicyEnvelope {
   readonly policies: RawYAMLPolicy[];
+}
+
+function unwrapPolicies(data: unknown): RawYAMLPolicy[] {
+  if (Array.isArray(data)) return data as RawYAMLPolicy[];
+  if (data && typeof data === 'object' && 'policies' in data) {
+    const envelope = data as PolicyEnvelope;
+    if (Array.isArray(envelope.policies)) return envelope.policies as RawYAMLPolicy[];
+  }
+  return [];
 }
 
 function validateRawPolicy(p: Record<string, unknown>): boolean {
@@ -149,9 +158,8 @@ function transformYAMLPolicy(raw: RawYAMLPolicy): PolicyDefinition {
 export function loadPoliciesFromYAML(filePath: string): PolicyDefinition[] {
   try {
     const content = fs.readFileSync(filePath, 'utf-8');
-    const data = yaml.load(content) as PolicyFile;
-    if (!data?.policies || !Array.isArray(data.policies)) return [];
-    return data.policies
+    const data = yaml.load(content);
+    return unwrapPolicies(data)
       .filter((p: any) => validateRawPolicy(p))
       .map(transformYAMLPolicy);
   } catch {
@@ -189,9 +197,10 @@ export async function loadPoliciesFromAPI(
 
     const response = await fetch(endpoint, { headers });
     if (!response.ok) return [];
-    const data = (await response.json()) as PolicyFile;
-    if (!data?.policies || !Array.isArray(data.policies)) return [];
-    return data.policies.filter((p: any) => validateRawPolicy(p)).map(transformYAMLPolicy);
+    const data = await response.json();
+    return unwrapPolicies(data)
+      .filter((p: any) => validateRawPolicy(p))
+      .map(transformYAMLPolicy);
   } catch {
     return [];
   }

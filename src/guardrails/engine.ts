@@ -161,9 +161,9 @@ export class GuardrailsEngine {
 
     // 1. IDLE → EVALUATING
     lifecycle.transitionTo(GuardrailState.EVALUATING);
-    const directionAttr = direction === 'inbound' ? 'input' : 'output';
     parentSpan.setAttribute('klira.entity_type', 'guardrails');
-    parentSpan.setAttribute('klira.guardrails.direction', directionAttr);
+    parentSpan.setAttribute('klira.entity_name', 'guardrails');
+    parentSpan.setAttribute('klira.compliance.direction', direction);
 
     // Run fast rules inside a child span
     const tracer = getTracer();
@@ -277,7 +277,7 @@ export class GuardrailsEngine {
               blocked: true,
             },
           ],
-      direction: direction === 'inbound' ? 'input' : 'output',
+      direction,
     };
   }
 

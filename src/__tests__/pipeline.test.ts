@@ -1,5 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { Klira } from '../index.js';
+import { initPipeline } from '../observability/pipeline.js';
+import type { KliraConfig } from '../types/index.js';
 
 describe('Klira.init() & pipeline', () => {
   afterEach(async () => {
@@ -58,5 +60,35 @@ describe('Klira.init() & pipeline', () => {
     expect(() => {
       (config as any).appName = 'hacked';
     }).toThrow();
+  });
+
+  // PROD-764 Phase 1 — drop klira.schema.version from emitted resource
+  it('does not emit klira.schema.version as a resource attribute', async () => {
+    const fakeConfig: KliraConfig = Object.freeze({
+      apiKey: undefined,
+      appName: 'parity-test',
+      environment: 'test',
+      tracingEnabled: true,
+      endpoint: 'http://localhost:4318',
+      verbose: false,
+      debugMode: false,
+      policiesPath: undefined,
+      policyApiEndpoint: undefined,
+      guardrails: Object.freeze({
+        fastRulesEnabled: true,
+        augmentationEnabled: true,
+        llmFallbackEnabled: false,
+        failureMode: 'open' as const,
+      }),
+    });
+
+    const tracer = initPipeline(fakeConfig);
+    const span = tracer.startSpan('klira.workflow.parity-test');
+    span.end();
+    const resource: { attributes?: Record<string, unknown>; _attributes?: Record<string, unknown> } = (span as unknown as { resource: { attributes?: Record<string, unknown>; _attributes?: Record<string, unknown> } }).resource;
+    const attrs = resource.attributes ?? resource._attributes ?? {};
+
+    expect(attrs['klira.schema.version']).toBeUndefined();
+    expect(attrs['klira.sdk.name']).toBe('klira-js');
   });
 });

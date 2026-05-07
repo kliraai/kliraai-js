@@ -62,7 +62,7 @@ export interface PolicyMatch {
   readonly description?: string;
   readonly policyName?: string;
   readonly category?: string;
-  readonly direction?: 'input' | 'output';
+  readonly direction?: 'inbound' | 'outbound';
   readonly position?: { start: number; end: number };
   readonly timestamp?: number;
 }
@@ -75,7 +75,7 @@ export interface GuardrailResult {
   readonly transformedInput?: string;
   readonly evaluationDuration?: number;
   readonly triggeredPolicies?: readonly string[];
-  readonly direction?: 'input' | 'output';
+  readonly direction?: 'inbound' | 'outbound';
 }
 
 export interface GuardrailOptions {
