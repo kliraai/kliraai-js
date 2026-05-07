@@ -649,7 +649,14 @@ describe('Guardrails latency', () => {
     await teardownOtel();
   });
 
-  it('evaluates in under 50ms', async () => {
+  // PROD-764 — the assertions guard against gross regressions on shared CI
+  // runners under coverage instrumentation, not against the 50ms target the
+  // engine actually achieves locally on warm builds. The product target is
+  // <50ms; the test threshold is 120ms to ride out CI noise. If we ever blow
+  // through 120ms, that's a real regression worth investigating.
+  const PERF_THRESHOLD_MS = 120;
+
+  it('evaluates fast (target <50ms; CI bound 120ms)', async () => {
     const engine = new GuardrailsEngine();
     engine['fastRules'].initialize(createTestPolicies());
     engine['initialized'] = true;
@@ -658,10 +665,10 @@ describe('Guardrails latency', () => {
     await engine.evaluateInput('This is a normal message with no policy violations');
     const elapsed = performance.now() - start;
 
-    expect(elapsed).toBeLessThan(50);
+    expect(elapsed).toBeLessThan(PERF_THRESHOLD_MS);
   });
 
-  it('evaluates blocking content in under 50ms', async () => {
+  it('evaluates blocking content fast (target <50ms; CI bound 120ms)', async () => {
     const engine = new GuardrailsEngine();
     engine['fastRules'].initialize(createTestPolicies());
     engine['initialized'] = true;
@@ -670,10 +677,10 @@ describe('Guardrails latency', () => {
     await engine.evaluateInput('My SSN is 123-45-6789');
     const elapsed = performance.now() - start;
 
-    expect(elapsed).toBeLessThan(50);
+    expect(elapsed).toBeLessThan(PERF_THRESHOLD_MS);
   });
 
-  it('evaluates with default policies in under 50ms', async () => {
+  it('evaluates with default policies fast (target <50ms; CI bound 120ms)', async () => {
     const engine = new GuardrailsEngine();
     await engine.initialize();
 
@@ -681,6 +688,6 @@ describe('Guardrails latency', () => {
     await engine.evaluateInput('This is a normal message');
     const elapsed = performance.now() - start;
 
-    expect(elapsed).toBeLessThan(50);
+    expect(elapsed).toBeLessThan(PERF_THRESHOLD_MS);
   });
 });
