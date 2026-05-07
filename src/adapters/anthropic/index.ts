@@ -46,7 +46,7 @@ export function createAnthropicAdapter<T extends { messages: { create: (...args:
     // a synthetic system message — Python parity.
     const dynamic = getAndClearGuidelines();
     const guidelines = dynamic ?? options?.guidelines ?? [];
-    let finalParams: any = { ...params };
+    const finalParams: any = { ...params };
     if (guidelines.length > 0) {
       finalParams.system = buildAugmentedSystemKwarg(params.system, guidelines);
     }

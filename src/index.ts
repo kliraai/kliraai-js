@@ -180,5 +180,17 @@ export { getTracer } from './observability/pipeline.js';
 export { workflow, agent, task, tool, userMessage } from './wrappers/index.js';
 export { withGuardrails } from './wrappers/guardrails.js';
 
+// Re-export healthcare helpers (PROD-764 — needed by parity-harness JS port).
+export {
+  setPatientContext,
+  setClinicalContext,
+  setInteractionModality,
+  logClinicalDecision,
+  logEscalation,
+  logHandoff,
+  logSafetyCheck,
+  logRAGRetrieval,
+} from './healthcare/index.js';
+
 // Default export
 export default Klira;
