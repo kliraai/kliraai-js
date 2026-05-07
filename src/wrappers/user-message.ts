@@ -10,7 +10,6 @@
 import { context as otelContext, SpanStatusCode } from '@opentelemetry/api';
 import type { UserMessageOptions } from '../types/index.js';
 import { getProcessor, getTracer } from '../observability/pipeline.js';
-import { applyRuntimeAttrs } from './context.js';
 import { setKliraContext, markInTrace } from '../tracing/propagation.js';
 import { getGlobalConfigOrNull } from '../config/index.js';
 
@@ -30,24 +29,22 @@ export function userMessage<TArgs extends unknown[], TReturn>(
     });
     const ctx = markInTrace(baseCtx);
 
+    // Python parity: klira.user.message carries only the four core
+    // identifiers. Framework / clinical_domain / evals_run live on
+    // the workflow span (set there via setClinicalContext etc), not
+    // on the root.
     const rootAttrs: Record<string, string> = {
       'klira.entity_type': 'user_message',
-      'klira.entity_name': 'user_message',
       'klira.user_id': options.userId,
       'klira.conversation_id': options.conversationId,
       'klira.message_id': options.messageId,
     };
-    if (framework) rootAttrs['klira.framework'] = framework;
-    if (config?.evalsRun) rootAttrs['klira.evals.evals_run'] = config.evalsRun;
-    if (config?.datasetId) rootAttrs['klira.evals.dataset_id'] = config.datasetId;
-    if (config?.clinicalDomain) rootAttrs['klira.healthcare.clinical_domain'] = config.clinicalDomain;
 
     return otelContext.with(ctx, () =>
       tracer.startActiveSpan(
         'klira.user.message',
         { attributes: rootAttrs },
         async (span) => {
-          applyRuntimeAttrs(span);
           try {
             const value = await fn(...args);
             span.setStatus({ code: SpanStatusCode.OK });

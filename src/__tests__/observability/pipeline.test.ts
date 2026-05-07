@@ -55,33 +55,24 @@ describe('NoneAttributeFilterProcessor', () => {
     expect('drop_undef' in got.attributes).toBe(false);
   });
 
-  it('injects klira.duration_ms when absent', () => {
+  // PROD-764 — Python parity removed duration_ms / guardrails.latency_ms
+  // injection. Span duration is recoverable from start/end times on the wire.
+  it('does not inject klira.duration_ms', () => {
     const tracer = trace.getTracer('test');
     const span = tracer.startSpan('klira.workflow.x');
     span.end();
 
     const got = exporter.getFinishedSpans()[0];
-    expect(typeof got.attributes['klira.duration_ms']).toBe('number');
-    expect(got.attributes['klira.duration_ms'] as number).toBeGreaterThanOrEqual(0);
+    expect('klira.duration_ms' in got.attributes).toBe(false);
   });
 
-  it('injects klira.guardrails.latency_ms on guardrails spans', () => {
+  it('does not inject klira.guardrails.latency_ms on guardrails spans', () => {
     const tracer = trace.getTracer('test');
     const span = tracer.startSpan('klira.guardrails.input');
     span.end();
 
     const got = exporter.getFinishedSpans()[0];
-    expect(typeof got.attributes['klira.guardrails.latency_ms']).toBe('number');
-  });
-
-  it('does not overwrite an existing klira.duration_ms', () => {
-    const tracer = trace.getTracer('test');
-    const span = tracer.startSpan('klira.workflow.x');
-    span.setAttribute('klira.duration_ms', 999);
-    span.end();
-
-    const got = exporter.getFinishedSpans()[0];
-    expect(got.attributes['klira.duration_ms']).toBe(999);
+    expect('klira.guardrails.latency_ms' in got.attributes).toBe(false);
   });
 });
 

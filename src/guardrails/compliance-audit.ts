@@ -35,6 +35,9 @@ export function scheduleAudit(
       {
         attributes: {
           'klira.entity_type': 'compliance',
+          // Python parity (PROD-764): klira.entity_name on the compliance
+          // span carries the bare past-tense decision word.
+          'klira.entity_name': decision,
           'klira.compliance.direction': direction,
           'klira.compliance.decision.allowed': result.allowed,
           'klira.compliance.decision.action': result.blocked ? 'block' : 'allow',

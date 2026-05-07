@@ -23,6 +23,16 @@ import { FastRulesEngine } from './fast-rules.js';
 import { PolicyAugmentation } from './policy-augmentation.js';
 import { routeDecision, type GuardrailDecision } from './decision-router.js';
 import { scheduleAudit } from './compliance-audit.js';
+
+/** Map the past-tense internal decision to Python's action-verb wire value. */
+function decisionToAction(decision: GuardrailDecision): string {
+  switch (decision) {
+    case 'allowed': return 'allow';
+    case 'blocked': return 'block';
+    case 'augmented': return 'augment';
+    case 'llm_fallback': return 'llm_fallback';
+  }
+}
 import { LLMFallbackService, type LLMService } from './llm-fallback.js';
 import { loadDefaultPolicies, loadPoliciesFromYAML, loadPoliciesFromAPI } from './policy-loader.js';
 
@@ -194,32 +204,23 @@ export class GuardrailsEngine {
     const startTime = Date.now();
     const parentCtx = context.active();
 
-    // 1. IDLE → EVALUATING
+    // PROD-764 — Python parity:
+    //   - entity_name is direction-shaped ("input" / "output"), not "guardrails"
+    //   - klira.guardrails.policy_count lives on the parent span
+    //   - klira.guardrails.decision uses action verbs ("allow" / "block" / "augment" / "llm_fallback")
+    //   - no klira.guardrails.fast_rules / klira.guardrails.route_decision
+    //     child spans (Python sets the same data as attributes on the parent)
+    //   - no klira.guardrails.augmentation_applied / match_count /
+    //     evaluation_duration_ms on the parent span
     lifecycle.transitionTo(GuardrailState.EVALUATING);
     parentSpan.setAttribute('klira.entity_type', 'guardrails');
-    parentSpan.setAttribute('klira.entity_name', 'guardrails');
+    parentSpan.setAttribute('klira.entity_name', direction === 'inbound' ? 'input' : 'output');
     parentSpan.setAttribute('klira.compliance.direction', direction);
+    parentSpan.setAttribute('klira.guardrails.policy_count', this.fastRules.getPolicyCount());
 
-    // Run fast rules inside a child span
-    const tracer = getTracer();
-    const fastRulesResult = tracer.startActiveSpan(
-      'klira.guardrails.fast_rules',
-      {
-        attributes: {
-          'klira.entity_type': 'guardrails',
-          'klira.guardrails.policy_count': this.fastRules.getPolicyCount(),
-        },
-      },
-      (fastSpan: Span) => {
-        const result = this.config.fastRulesEnabled
-          ? this.fastRules.evaluate(content, direction)
-          : { matches: [], blocked: false, allowed: true };
-        fastSpan.setAttribute('klira.guardrails.match_count', result.matches.length);
-        fastSpan.setStatus({ code: SpanStatusCode.OK });
-        fastSpan.end();
-        return result;
-      },
-    );
+    const fastRulesResult = this.config.fastRulesEnabled
+      ? this.fastRules.evaluate(content, direction)
+      : { matches: [], blocked: false, allowed: true };
 
     // LLM fallback when fast rules produce zero matches
     let llmFallbackUsed = false;
@@ -239,7 +240,6 @@ export class GuardrailsEngine {
       }
     }
 
-    // Generate augmentation guidelines
     const guidelines = this.config.augmentationEnabled && !fastRulesResult.blocked
       ? this.augmentation.generateGuidelines(
           fastRulesResult.matches,
@@ -247,42 +247,20 @@ export class GuardrailsEngine {
         )
       : [];
 
-    // 2. EVALUATING → DECIDED
     lifecycle.transitionTo(GuardrailState.DECIDED);
     const duration = Date.now() - startTime;
 
-    // Route decision inside child span
-    const { result, decision } = tracer.startActiveSpan(
-      'klira.guardrails.route_decision',
-      {
-        attributes: {
-          'klira.entity_type': 'guardrails',
-        },
-      },
-      (routeSpan: Span) => {
-        const effectiveDecision = llmFallbackUsed ? 'llm_fallback' as GuardrailDecision : undefined;
-        const routed = routeDecision(fastRulesResult, guidelines, direction, duration);
-        const finalDecision = effectiveDecision ?? routed.decision;
-        routeSpan.setAttribute('klira.guardrails.decision', finalDecision);
-        routeSpan.setAttribute('klira.guardrails.allowed', routed.result.allowed);
-        routeSpan.setStatus({ code: SpanStatusCode.OK });
-        routeSpan.end();
-        return { result: routed.result, decision: finalDecision };
-      },
-    );
+    const effectiveDecision = llmFallbackUsed ? 'llm_fallback' as GuardrailDecision : undefined;
+    const routed = routeDecision(fastRulesResult, guidelines, direction, duration);
+    const decision: GuardrailDecision = effectiveDecision ?? routed.decision;
+    const result = routed.result;
 
-    // Record decision on parent span
-    parentSpan.setAttribute('klira.guardrails.decision', decision);
+    parentSpan.setAttribute('klira.guardrails.decision', decisionToAction(decision));
     parentSpan.setAttribute('klira.guardrails.allowed', result.allowed);
-    parentSpan.setAttribute('klira.guardrails.match_count', result.matches.length);
-    parentSpan.setAttribute('klira.guardrails.augmentation_applied', decision === 'augmented');
-    parentSpan.setAttribute('klira.guardrails.evaluation_duration_ms', duration);
 
-    // 3. DECIDED → AUDIT_SCHEDULED (async, never blocks)
     lifecycle.transitionTo(GuardrailState.AUDIT_SCHEDULED);
     scheduleAudit(decision, result, direction, parentCtx);
 
-    // 4. AUDIT_SCHEDULED → DONE
     lifecycle.transitionTo(GuardrailState.DONE);
 
     parentSpan.setStatus({ code: SpanStatusCode.OK });

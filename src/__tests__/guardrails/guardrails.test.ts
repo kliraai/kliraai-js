@@ -502,7 +502,7 @@ describe('GuardrailsEngine', () => {
     expect(result.matches.length).toBeGreaterThan(0);
   });
 
-  it('creates guardrails OTel spans', async () => {
+  it('creates a single klira.guardrails.input span (Python parity, no fast_rules / route_decision children)', async () => {
     const engine = new GuardrailsEngine();
     engine['fastRules'].initialize(createTestPolicies());
     engine['initialized'] = true;
@@ -513,8 +513,8 @@ describe('GuardrailsEngine', () => {
     const spanNames = spans.map((s) => s.name);
 
     expect(spanNames).toContain('klira.guardrails.input');
-    expect(spanNames).toContain('klira.guardrails.fast_rules');
-    expect(spanNames).toContain('klira.guardrails.route_decision');
+    expect(spanNames).not.toContain('klira.guardrails.fast_rules');
+    expect(spanNames).not.toContain('klira.guardrails.route_decision');
   });
 
   it('creates output spans for evaluateOutput', async () => {
@@ -539,8 +539,10 @@ describe('GuardrailsEngine', () => {
     const spans = exporter.getFinishedSpans();
     const inputSpan = spans.find((s) => s.name === 'klira.guardrails.input');
     expect(inputSpan).toBeDefined();
-    expect(inputSpan!.attributes['klira.guardrails.decision']).toBe('allowed');
+    // Python parity: action verb on the wire ('allow' / 'block' / 'augment').
+    expect(inputSpan!.attributes['klira.guardrails.decision']).toBe('allow');
     expect(inputSpan!.attributes['klira.guardrails.allowed']).toBe(true);
+    expect(inputSpan!.attributes['klira.guardrails.policy_count']).toBeTypeOf('number');
   });
 
   it('handles augmented decision with guidelines', async () => {
@@ -560,8 +562,13 @@ describe('GuardrailsEngine', () => {
     if (result.guidelines && result.guidelines.length > 0) {
       const spans = exporter.getFinishedSpans();
       const inputSpan = spans.find((s) => s.name === 'klira.guardrails.input');
-      expect(inputSpan!.attributes['klira.guardrails.decision']).toBe('augmented');
-      expect(inputSpan!.attributes['klira.guardrails.augmentation_applied']).toBe(true);
+      // Python parity: the parent guardrails span no longer carries
+      // klira.guardrails.augmentation_applied — that flag lives on the
+      // child klira.compliance.augmented span instead.
+      expect(inputSpan!.attributes['klira.guardrails.decision']).toBe('augment');
+      const compliance = spans.find((s) => s.name === 'klira.compliance.augmented');
+      expect(compliance).toBeDefined();
+      expect(compliance!.attributes['klira.guardrails.augmentation_applied']).toBe(true);
     }
   });
 
@@ -601,16 +608,19 @@ describe('GuardrailsEngine', () => {
     expect(output!.attributes['klira.guardrails.direction']).toBeUndefined();
   });
 
-  it('sets klira.entity_name = "guardrails" on guardrails parent spans', async () => {
+  it('sets klira.entity_name to direction-shaped value on guardrails parent spans (Python parity)', async () => {
     const engine = new GuardrailsEngine();
     engine['fastRules'].initialize(createTestPolicies());
     engine['initialized'] = true;
 
     await engine.evaluateInput('Hello world');
+    await engine.evaluateOutput('Safe output');
 
     const spans = exporter.getFinishedSpans();
     const input = spans.find((s) => s.name === 'klira.guardrails.input');
-    expect(input!.attributes['klira.entity_name']).toBe('guardrails');
+    const output = spans.find((s) => s.name === 'klira.guardrails.output');
+    expect(input!.attributes['klira.entity_name']).toBe('input');
+    expect(output!.attributes['klira.entity_name']).toBe('output');
   });
 
   it('GuardrailResult.direction reports inbound/outbound (Python parity)', async () => {

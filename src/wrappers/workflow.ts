@@ -77,17 +77,15 @@ export function workflow<TArgs extends unknown[], TReturn>(
       }),
     );
 
+    // Python parity (PROD-764): root klira.user.message only carries the
+    // four core identifiers. Other tagging happens on workflow / tool spans.
+    void config;
     const rootAttrs: Record<string, string> = {
       'klira.entity_type': 'user_message',
-      'klira.entity_name': 'user_message',
       'klira.user_id': 'anonymous',
       'klira.conversation_id': conversationId,
       'klira.message_id': messageId,
     };
-    if (config?.framework) rootAttrs['klira.framework'] = config.framework;
-    if (config?.evalsRun) rootAttrs['klira.evals.evals_run'] = config.evalsRun;
-    if (config?.datasetId) rootAttrs['klira.evals.dataset_id'] = config.datasetId;
-    if (config?.clinicalDomain) rootAttrs['klira.healthcare.clinical_domain'] = config.clinicalDomain;
 
     return otelContext.with(ctx, () =>
       tracer.startActiveSpan(

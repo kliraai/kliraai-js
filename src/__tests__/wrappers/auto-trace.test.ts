@@ -97,50 +97,21 @@ describe('runtime attribute propagation', () => {
   });
 });
 
-describe('root-span tagging from globalConfig', () => {
+describe('klira.user.message root-span shape (Python parity)', () => {
   afterEach(() => resetGlobalConfig());
 
-  it('stamps klira.evals.evals_run / klira.evals.dataset_id when configured', async () => {
-    setGlobalConfig(createConfig({ appName: 't', evalsRun: 'run-7', datasetId: 'ds-3' }));
-
-    const handler = userMessage(
-      { userId: 'u', conversationId: 'c', messageId: 'm' },
-      async () => 'ok',
-    );
-    await handler();
-
-    const spans = exporter.getFinishedSpans();
-    const root = spans.find((s) => s.name === 'klira.user.message');
-    expect(root!.attributes['klira.evals.evals_run']).toBe('run-7');
-    expect(root!.attributes['klira.evals.dataset_id']).toBe('ds-3');
-  });
-
-  it('stamps klira.healthcare.clinical_domain when configured', async () => {
-    setGlobalConfig(createConfig({ appName: 't', clinicalDomain: 'clinical_notes' }));
-
-    const handler = userMessage(
-      { userId: 'u', conversationId: 'c', messageId: 'm' },
-      async () => 'ok',
-    );
-    await handler();
-
-    const root = exporter.getFinishedSpans().find((s) => s.name === 'klira.user.message');
-    expect(root!.attributes['klira.healthcare.clinical_domain']).toBe('clinical_notes');
-  });
-
-  it('auto-created root from bare workflow inherits config tagging', async () => {
-    setGlobalConfig(createConfig({ appName: 't', evalsRun: 'run-9', framework: 'pytest' }));
-
-    const fn = workflow('flow', async () => 'ok');
-    await fn();
-
-    const root = exporter.getFinishedSpans().find((s) => s.name === 'klira.user.message');
-    expect(root!.attributes['klira.evals.evals_run']).toBe('run-9');
-    expect(root!.attributes['klira.framework']).toBe('pytest');
-  });
-
-  it('omits the attribute when the config knob is unset', async () => {
-    setGlobalConfig(createConfig({ appName: 't' }));
+  // PROD-764 — Python's klira.user.message carries only the four core
+  // identifiers. Framework / clinical_domain / evals_run / dataset_id
+  // belong on workflow / tool spans (clinical_domain via setClinicalContext)
+  // or are exposed as resource attributes — never on the root.
+  it('does not stamp evals/clinical/framework on the root, even when configured', async () => {
+    setGlobalConfig(createConfig({
+      appName: 't',
+      evalsRun: 'run-7',
+      datasetId: 'ds-3',
+      clinicalDomain: 'clinical_notes',
+      framework: 'pytest',
+    }));
 
     const handler = userMessage(
       { userId: 'u', conversationId: 'c', messageId: 'm' },
@@ -149,9 +120,19 @@ describe('root-span tagging from globalConfig', () => {
     await handler();
 
     const root = exporter.getFinishedSpans().find((s) => s.name === 'klira.user.message');
+    expect(root).toBeDefined();
     expect(root!.attributes['klira.evals.evals_run']).toBeUndefined();
     expect(root!.attributes['klira.evals.dataset_id']).toBeUndefined();
     expect(root!.attributes['klira.healthcare.clinical_domain']).toBeUndefined();
+    expect(root!.attributes['klira.framework']).toBeUndefined();
+    expect(root!.attributes['klira.entity_name']).toBeUndefined();
+    // Only the four core identifiers
+    expect(Object.keys(root!.attributes).sort()).toEqual([
+      'klira.conversation_id',
+      'klira.entity_type',
+      'klira.message_id',
+      'klira.user_id',
+    ]);
   });
 });
 

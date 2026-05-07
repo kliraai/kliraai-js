@@ -154,22 +154,18 @@ describe('End-to-end trace validation', () => {
     const outputResult = await engine.evaluateOutput('I am fine, thank you!');
     expect(outputResult.allowed).toBe(true);
 
-    // Validate guardrails spans
+    // Validate guardrails spans (Python parity — no fast_rules / route_decision children)
     const spans = exporter.getFinishedSpans();
     const inputSpan = spans.find((s) => s.name === 'klira.guardrails.input');
     expect(inputSpan).toBeDefined();
-    expect(inputSpan!.attributes['klira.guardrails.decision']).toBe('allowed');
+    expect(inputSpan!.attributes['klira.guardrails.decision']).toBe('allow');
 
     const outputSpan = spans.find((s) => s.name === 'klira.guardrails.output');
     expect(outputSpan).toBeDefined();
 
-    // Fast rules span should exist as child
-    const fastRulesSpans = spans.filter((s) => s.name === 'klira.guardrails.fast_rules');
-    expect(fastRulesSpans.length).toBeGreaterThanOrEqual(2);
-
-    // Route decision spans
-    const routeSpans = spans.filter((s) => s.name === 'klira.guardrails.route_decision');
-    expect(routeSpans.length).toBeGreaterThanOrEqual(2);
+    // PROD-764 — Python doesn't emit fast_rules / route_decision child spans.
+    expect(spans.filter((s) => s.name === 'klira.guardrails.fast_rules')).toHaveLength(0);
+    expect(spans.filter((s) => s.name === 'klira.guardrails.route_decision')).toHaveLength(0);
   });
 
   it('all wrapper spans have klira.entity_type', () => {

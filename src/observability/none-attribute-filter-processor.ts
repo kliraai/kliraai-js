@@ -16,8 +16,16 @@ import type {
   ReadableSpan,
   SpanProcessor,
 } from '@opentelemetry/sdk-trace-base';
-import { hrTimeToMilliseconds } from '@opentelemetry/core';
 
+/**
+ * Strips null / undefined attribute values pre-export so the OTLP exporter
+ * never emits them on the wire. Mirrors Python `klira/sdk/telemetry/processor.py`.
+ *
+ * Note: an earlier revision also injected `klira.duration_ms` /
+ * `klira.guardrails.latency_ms` here. Removed in PROD-764 because Python's
+ * processor doesn't emit those, and the cross-SDK parity diff failed on them.
+ * Span duration is recoverable from `start_time` / `end_time` on the wire.
+ */
 export class NoneAttributeFilterProcessor implements SpanProcessor {
   onStart(_span: ApiSpan, _parentContext: Context): void {
     // no-op
@@ -25,29 +33,11 @@ export class NoneAttributeFilterProcessor implements SpanProcessor {
 
   onEnd(span: ReadableSpan): void {
     const attrs = span.attributes as Record<string, unknown>;
-
     for (const key of Object.keys(attrs)) {
       const value = attrs[key];
       if (value === null || value === undefined) {
         delete attrs[key];
       }
-    }
-
-    if (attrs['klira.duration_ms'] === undefined) {
-      const start = hrTimeToMilliseconds(span.startTime);
-      const end = hrTimeToMilliseconds(span.endTime);
-      const duration = end - start;
-      if (duration >= 0) {
-        attrs['klira.duration_ms'] = duration;
-      }
-    }
-
-    if (
-      span.name.startsWith('klira.guardrails.') &&
-      attrs['klira.guardrails.latency_ms'] === undefined &&
-      typeof attrs['klira.duration_ms'] === 'number'
-    ) {
-      attrs['klira.guardrails.latency_ms'] = attrs['klira.duration_ms'];
     }
   }
 

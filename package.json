@@ -4,53 +4,53 @@
   "type": "module",
   "description": "Klira AI Compliance for GenAI - JavaScript/TypeScript SDK for LLM observability, tracing, and guardrails",
   "main": "dist/index.js",
-  "module": "dist/index.mjs",
+  "module": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.mjs",
-      "require": "./dist/index.js"
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
     },
     "./vercel-ai": {
       "types": "./dist/adapters/vercel-ai/index.d.ts",
-      "import": "./dist/adapters/vercel-ai/index.mjs",
-      "require": "./dist/adapters/vercel-ai/index.js"
+      "import": "./dist/adapters/vercel-ai/index.js",
+      "require": "./dist/adapters/vercel-ai/index.cjs"
     },
     "./langchain": {
       "types": "./dist/adapters/langchain/index.d.ts",
-      "import": "./dist/adapters/langchain/index.mjs",
-      "require": "./dist/adapters/langchain/index.js"
+      "import": "./dist/adapters/langchain/index.js",
+      "require": "./dist/adapters/langchain/index.cjs"
     },
     "./openai": {
       "types": "./dist/adapters/openai/index.d.ts",
-      "import": "./dist/adapters/openai/index.mjs",
-      "require": "./dist/adapters/openai/index.js"
+      "import": "./dist/adapters/openai/index.js",
+      "require": "./dist/adapters/openai/index.cjs"
     },
     "./anthropic": {
       "types": "./dist/adapters/anthropic/index.d.ts",
-      "import": "./dist/adapters/anthropic/index.mjs",
-      "require": "./dist/adapters/anthropic/index.js"
+      "import": "./dist/adapters/anthropic/index.js",
+      "require": "./dist/adapters/anthropic/index.cjs"
     },
     "./gemini": {
       "types": "./dist/adapters/gemini/index.d.ts",
-      "import": "./dist/adapters/gemini/index.mjs",
-      "require": "./dist/adapters/gemini/index.js"
+      "import": "./dist/adapters/gemini/index.js",
+      "require": "./dist/adapters/gemini/index.cjs"
     },
     "./ollama": {
       "types": "./dist/adapters/ollama/index.d.ts",
-      "import": "./dist/adapters/ollama/index.mjs",
-      "require": "./dist/adapters/ollama/index.js"
+      "import": "./dist/adapters/ollama/index.js",
+      "require": "./dist/adapters/ollama/index.cjs"
     },
     "./litellm": {
       "types": "./dist/adapters/litellm/index.d.ts",
-      "import": "./dist/adapters/litellm/index.mjs",
-      "require": "./dist/adapters/litellm/index.js"
+      "import": "./dist/adapters/litellm/index.js",
+      "require": "./dist/adapters/litellm/index.cjs"
     },
     "./custom": {
       "types": "./dist/adapters/custom/index.d.ts",
-      "import": "./dist/adapters/custom/index.mjs",
-      "require": "./dist/adapters/custom/index.js"
+      "import": "./dist/adapters/custom/index.js",
+      "require": "./dist/adapters/custom/index.cjs"
     }
   },
   "files": [

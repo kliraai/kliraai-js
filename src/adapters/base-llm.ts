@@ -5,23 +5,27 @@
  * Truncates prompt to 10k chars, output to 5k chars per contract.
  */
 
-import { type Span } from '@opentelemetry/api';
+import { SpanStatusCode, type Span } from '@opentelemetry/api';
 import {
   PROMPT_TRUNCATION_LIMIT,
   OUTPUT_TRUNCATION_LIMIT,
 } from '../contracts/adapter-interfaces.js';
 import type { LLMCallOptions, LLMCallResult } from '../types/index.js';
-import { withSpan } from '../wrappers/context.js';
+import { getTracer } from '../observability/pipeline.js';
 
 // ---------------------------------------------------------------------------
 // Span creation
 // ---------------------------------------------------------------------------
 
 /**
- * Run an LLM call inside a `klira.llm.{provider}` span. Delegates to the
- * shared `withSpan` helper so LLM spans pick up the same `klira.user_id`
- * / `klira.conversation_id` / `klira.framework` runtime attributes the
- * wrappers apply.
+ * Run an LLM call inside a `klira.llm.{provider}` span.
+ *
+ * **Wire shape (Python parity, PROD-764):** the LLM span carries only
+ * `klira.entity_type`, the `gen_ai.*` semantic-convention attributes,
+ * and `klira.output`. It deliberately does *not* carry the propagated
+ * `klira.user_id` / `klira.conversation_id` / `klira.framework` that
+ * non-LLM wrappers stamp — Python's `klira.llm.*` span is opinionated
+ * about staying lean to keep the GenAI-conventions surface clean.
  */
 export async function withLLMSpan<T>(
   provider: string,
@@ -29,29 +33,35 @@ export async function withLLMSpan<T>(
   fn: (span: Span) => Promise<T>,
   extractResult?: (response: T) => LLMCallResult,
 ): Promise<T> {
-  const result = withSpan(
-    `klira.llm.${provider}`,
-    {
-      'klira.entity_type': 'llm',
-      'klira.entity_name': provider,
-      'gen_ai.system': provider.toLowerCase(),
-      'gen_ai.request.model': options.model,
-    },
-    async (span) => {
-      // Capture prompt (truncated) on the active span.
-      if (options.messages && options.messages.length > 0) {
-        const promptText = messagesToText(options.messages);
-        span.setAttribute('klira.input', truncate(promptText, PROMPT_TRUNCATION_LIMIT));
-      }
+  const tracer = getTracer();
+  const spanName = `klira.llm.${provider}`;
 
+  return tracer.startActiveSpan(spanName, async (span) => {
+    span.setAttribute('klira.entity_type', 'llm');
+    span.setAttribute('gen_ai.system', provider.toLowerCase());
+    span.setAttribute('gen_ai.request.model', options.model);
+    if (options.messages && options.messages.length > 0) {
+      span.setAttribute(
+        'gen_ai.prompt',
+        truncate(JSON.stringify(options.messages), PROMPT_TRUNCATION_LIMIT),
+      );
+    }
+
+    try {
       const response = await fn(span);
       if (extractResult) {
         setResponseAttributes(span, extractResult(response));
       }
+      span.setStatus({ code: SpanStatusCode.OK });
       return response;
-    },
-  );
-  return (await result) as T;
+    } catch (error) {
+      span.recordException(error as Error);
+      span.setStatus({ code: SpanStatusCode.ERROR, message: (error as Error).message });
+      throw error;
+    } finally {
+      span.end();
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -64,16 +74,13 @@ export function setRequestAttributes(
   options: LLMCallOptions,
 ): void {
   span.setAttribute('klira.entity_type', 'llm');
-  span.setAttribute('klira.entity_name', provider);
   span.setAttribute('gen_ai.system', provider.toLowerCase());
   span.setAttribute('gen_ai.request.model', options.model);
 
-  // Capture prompt (truncated)
   if (options.messages && options.messages.length > 0) {
-    const promptText = messagesToText(options.messages);
     span.setAttribute(
-      'klira.input',
-      truncate(promptText, PROMPT_TRUNCATION_LIMIT),
+      'gen_ai.prompt',
+      truncate(JSON.stringify(options.messages), PROMPT_TRUNCATION_LIMIT),
     );
   }
 }
@@ -137,13 +144,6 @@ export function augmentMessages(
 // ---------------------------------------------------------------------------
 // Utilities
 // ---------------------------------------------------------------------------
-
-function messagesToText(messages: Array<Record<string, unknown>>): string {
-  return messages
-    .map((m) => String(m.content ?? ''))
-    .filter(Boolean)
-    .join('\n');
-}
 
 function truncate(text: string, limit: number): string {
   if (text.length <= limit) return text;

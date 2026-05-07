@@ -9,23 +9,31 @@ import { SpanStatusCode } from '@opentelemetry/api';
 import { getTracer } from '../observability/pipeline.js';
 
 /**
- * Log a clinical decision.
+ * Log a clinical decision. Wire shape matches Python's `log_clinical_decision`.
  */
 export function logClinicalDecision(options: {
-  decisionType: string;
-  rationale: string;
+  decision: string;
+  reasoning: string;
   confidence?: number;
+  patientId?: string;
+  guidelinesUsed?: number;
   metadata?: Record<string, string | number | boolean>;
 }): void {
   const tracer = getTracer();
   const span = tracer.startSpan('klira.clinical.decision', {
     attributes: {
       'klira.entity_type': 'clinical_decision',
-      'klira.entity_name': options.decisionType,
-      'klira.clinical.decision_type': options.decisionType,
-      'klira.clinical.rationale': options.rationale,
+      'klira.entity_name': 'clinical_decision',
+      'klira.clinical.decision': options.decision,
+      'klira.clinical.reasoning': options.reasoning,
       ...(options.confidence !== undefined && {
         'klira.clinical.confidence': options.confidence,
+      }),
+      ...(options.patientId !== undefined && {
+        'klira.clinical.patient_id': options.patientId,
+      }),
+      ...(options.guidelinesUsed !== undefined && {
+        'klira.clinical.guidelines_used': options.guidelinesUsed,
       }),
       ...options.metadata,
     },
@@ -87,7 +95,7 @@ export function logHandoff(options: {
 }
 
 /**
- * Log a safety check.
+ * Log a safety check. Wire shape matches Python's `log_safety_check`.
  */
 export function logSafetyCheck(options: {
   checkType: string;
@@ -100,10 +108,10 @@ export function logSafetyCheck(options: {
     attributes: {
       'klira.entity_type': 'safety_check',
       'klira.entity_name': options.checkType,
-      'klira.clinical.safety_check_type': options.checkType,
-      'klira.clinical.safety_check_passed': options.passed,
+      'klira.clinical.check_type': options.checkType,
+      'klira.clinical.check_passed': options.passed,
       ...(options.details && {
-        'klira.clinical.safety_check_details': options.details,
+        'klira.clinical.check_details': options.details,
       }),
       ...options.metadata,
     },
@@ -113,22 +121,26 @@ export function logSafetyCheck(options: {
 }
 
 /**
- * Log a RAG retrieval event.
+ * Log a RAG retrieval event. Wire shape matches Python's `log_rag_retrieval`.
  */
 export function logRAGRetrieval(options: {
   source: string;
   query: string;
   resultCount: number;
+  indexName?: string;
   metadata?: Record<string, string | number | boolean>;
 }): void {
   const tracer = getTracer();
-  const span = tracer.startSpan('klira.rag.retrieval', {
+  const span = tracer.startSpan('klira.clinical.rag_retrieval', {
     attributes: {
       'klira.entity_type': 'rag_retrieval',
-      'klira.entity_name': options.source,
-      'klira.rag.source': options.source,
-      'klira.rag.query': options.query,
-      'klira.rag.result_count': options.resultCount,
+      'klira.entity_name': 'rag_retrieval',
+      'klira.clinical.rag_source': options.source,
+      'klira.clinical.rag_query': options.query,
+      'klira.clinical.rag_result_count': options.resultCount,
+      ...(options.indexName && {
+        'klira.clinical.index_name': options.indexName,
+      }),
       ...options.metadata,
     },
   });

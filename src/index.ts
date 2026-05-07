@@ -174,7 +174,7 @@ export {
 } from './contracts/adapter-interfaces.js';
 
 // Re-export observability
-export { getTracer } from './observability/pipeline.js';
+export { getTracer, getProviderForTesting } from './observability/pipeline.js';
 
 // Re-export wrappers
 export { workflow, agent, task, tool, userMessage } from './wrappers/index.js';

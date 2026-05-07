@@ -212,7 +212,7 @@ describe('Base LLM utilities', () => {
     expect(result).toBe(messages);
   });
 
-  it('truncates prompt to 10k chars (silent — Python parity)', async () => {
+  it('truncates gen_ai.prompt to 10k chars (silent — Python parity)', async () => {
     const longPrompt = 'a'.repeat(PROMPT_TRUNCATION_LIMIT + 1000);
     await withLLMSpan(
       'test',
@@ -221,9 +221,9 @@ describe('Base LLM utilities', () => {
     );
 
     const spans = exporter.getFinishedSpans();
-    const input = spans[0].attributes['klira.input'] as string;
-    expect(input.length).toBe(PROMPT_TRUNCATION_LIMIT);
-    expect(input).not.toContain('[truncated]');
+    const prompt = spans[0].attributes['gen_ai.prompt'] as string;
+    expect(prompt.length).toBe(PROMPT_TRUNCATION_LIMIT);
+    expect(prompt).not.toContain('[truncated]');
   });
 
   it('truncates output to 5k chars (silent — Python parity)', async () => {

@@ -111,6 +111,16 @@ export function getTracer(): Tracer {
   return kliraTracer;
 }
 
+/**
+ * Returns Klira's underlying TracerProvider after `initPipeline` has run.
+ * Exposed for testing harnesses (e.g. the cross-SDK parity diff) that
+ * need to attach an extra `SpanProcessor` for capture. Production code
+ * should not depend on this — use the public `getTracer()` instead.
+ */
+export function getProviderForTesting(): BasicTracerProvider | null {
+  return provider;
+}
+
 export function getProcessor(): SpanProcessor | null {
   return processor;
 }
