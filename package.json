@@ -27,6 +27,26 @@
       "import": "./dist/adapters/openai/index.mjs",
       "require": "./dist/adapters/openai/index.js"
     },
+    "./anthropic": {
+      "types": "./dist/adapters/anthropic/index.d.ts",
+      "import": "./dist/adapters/anthropic/index.mjs",
+      "require": "./dist/adapters/anthropic/index.js"
+    },
+    "./gemini": {
+      "types": "./dist/adapters/gemini/index.d.ts",
+      "import": "./dist/adapters/gemini/index.mjs",
+      "require": "./dist/adapters/gemini/index.js"
+    },
+    "./ollama": {
+      "types": "./dist/adapters/ollama/index.d.ts",
+      "import": "./dist/adapters/ollama/index.mjs",
+      "require": "./dist/adapters/ollama/index.js"
+    },
+    "./litellm": {
+      "types": "./dist/adapters/litellm/index.d.ts",
+      "import": "./dist/adapters/litellm/index.mjs",
+      "require": "./dist/adapters/litellm/index.js"
+    },
     "./custom": {
       "types": "./dist/adapters/custom/index.d.ts",
       "import": "./dist/adapters/custom/index.mjs",

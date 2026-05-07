@@ -15,6 +15,7 @@ import {
   SimpleLogger,
 } from './config/index.js';
 import { initPipeline, shutdownPipeline, resetPipeline } from './observability/pipeline.js';
+import { autoPatchInstalledLLMs } from './adapters/auto-patch.js';
 
 // ---------------------------------------------------------------------------
 // Klira — static class (renamed from KliraAI)
@@ -57,6 +58,9 @@ export class Klira {
         initPipeline(config);
         logger.debug('OTel pipeline initialized');
       }
+
+      // Best-effort auto-patch installed LLM SDKs (Python parity).
+      await autoPatchInstalledLLMs();
 
       Klira._initialized = true;
       logger.info('Klira SDK v2 initialized');

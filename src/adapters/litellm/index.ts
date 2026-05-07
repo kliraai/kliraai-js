@@ -10,6 +10,7 @@ import {
   augmentMessages,
 } from '../base-llm.js';
 import type { LLMCallResult } from '../../types/index.js';
+import { isPatched, markPatched } from '../sentinel.js';
 
 const PROVIDER = 'litellm';
 
@@ -31,6 +32,7 @@ export function createLiteLLMAdapter<T extends { completion: (...args: any[]) =>
   client: T,
   options?: { guidelines?: readonly string[] },
 ): T {
+  if (isPatched(client as object)) return client;
   const originalCompletion = client.completion.bind(client);
 
   const instrumentedCompletion = async (params: any, ...rest: any[]) => {
@@ -59,7 +61,7 @@ export function createLiteLLMAdapter<T extends { completion: (...args: any[]) =>
     );
   };
 
-  return new Proxy(client, {
+  const wrapped = new Proxy(client, {
     get(target, prop) {
       if (prop === 'completion') {
         return instrumentedCompletion;
@@ -67,4 +69,7 @@ export function createLiteLLMAdapter<T extends { completion: (...args: any[]) =>
       return (target as any)[prop];
     },
   });
+
+  markPatched(wrapped as object);
+  return wrapped;
 }

@@ -10,6 +10,7 @@ import {
   augmentMessages,
 } from '../base-llm.js';
 import type { LLMCallResult } from '../../types/index.js';
+import { isPatched, markPatched } from '../sentinel.js';
 
 const PROVIDER = 'ollama';
 
@@ -32,6 +33,7 @@ export function createOllamaAdapter<T extends { chat: (...args: any[]) => any }>
   client: T,
   options?: { guidelines?: readonly string[] },
 ): T {
+  if (isPatched(client as object)) return client;
   const originalChat = client.chat.bind(client);
 
   const instrumentedChat = async (params: any, ...rest: any[]) => {
@@ -58,7 +60,7 @@ export function createOllamaAdapter<T extends { chat: (...args: any[]) => any }>
     );
   };
 
-  return new Proxy(client, {
+  const wrapped = new Proxy(client, {
     get(target, prop) {
       if (prop === 'chat') {
         return instrumentedChat;
@@ -66,4 +68,7 @@ export function createOllamaAdapter<T extends { chat: (...args: any[]) => any }>
       return (target as any)[prop];
     },
   });
+
+  markPatched(wrapped as object);
+  return wrapped;
 }

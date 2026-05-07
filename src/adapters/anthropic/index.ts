@@ -10,6 +10,7 @@ import {
   augmentMessages,
 } from '../base-llm.js';
 import type { LLMCallResult } from '../../types/index.js';
+import { isPatched, markPatched } from '../sentinel.js';
 
 const PROVIDER = 'anthropic';
 
@@ -33,6 +34,7 @@ export function createAnthropicAdapter<T extends { messages: { create: (...args:
   client: T,
   options?: { guidelines?: readonly string[] },
 ): T {
+  if (isPatched(client as object)) return client;
   const originalCreate = client.messages.create.bind(client.messages);
 
   const instrumentedCreate = async (params: any, ...rest: any[]) => {
@@ -72,7 +74,7 @@ export function createAnthropicAdapter<T extends { messages: { create: (...args:
     );
   };
 
-  return new Proxy(client, {
+  const wrapped = new Proxy(client, {
     get(target, prop) {
       if (prop === 'messages') {
         return new Proxy(target.messages, {
@@ -87,4 +89,7 @@ export function createAnthropicAdapter<T extends { messages: { create: (...args:
       return (target as any)[prop];
     },
   });
+
+  markPatched(wrapped as object);
+  return wrapped;
 }

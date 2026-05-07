@@ -9,6 +9,7 @@ import {
   withLLMSpan,
 } from '../base-llm.js';
 import type { LLMCallResult } from '../../types/index.js';
+import { isPatched, markPatched } from '../sentinel.js';
 
 const PROVIDER = 'gemini';
 
@@ -29,6 +30,7 @@ export function createGeminiAdapter<T extends { generateContent: (...args: any[]
   model: T,
   options?: { modelName?: string },
 ): T {
+  if (isPatched(model as object)) return model;
   const originalGenerate = model.generateContent.bind(model);
   const modelName = options?.modelName ?? 'gemini-pro';
 
@@ -61,7 +63,7 @@ export function createGeminiAdapter<T extends { generateContent: (...args: any[]
     );
   };
 
-  return new Proxy(model, {
+  const wrapped = new Proxy(model, {
     get(target, prop) {
       if (prop === 'generateContent') {
         return instrumentedGenerate;
@@ -69,4 +71,7 @@ export function createGeminiAdapter<T extends { generateContent: (...args: any[]
       return (target as any)[prop];
     },
   });
+
+  markPatched(wrapped as object);
+  return wrapped;
 }

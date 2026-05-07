@@ -10,6 +10,7 @@ import {
   augmentMessages,
 } from '../base-llm.js';
 import type { LLMCallResult } from '../../types/index.js';
+import { isPatched, markPatched } from '../sentinel.js';
 
 const PROVIDER = 'openai';
 
@@ -32,6 +33,7 @@ export function createOpenAIAdapter<T extends { chat: { completions: { create: (
   client: T,
   options?: { guidelines?: readonly string[] },
 ): T {
+  if (isPatched(client as object)) return client;
   const originalCreate = client.chat.completions.create.bind(client.chat.completions);
 
   const instrumentedCreate = async (params: any, ...rest: any[]) => {
@@ -75,7 +77,7 @@ export function createOpenAIAdapter<T extends { chat: { completions: { create: (
   };
 
   // Create a shallow proxy that intercepts chat.completions.create
-  return new Proxy(client, {
+  const wrapped = new Proxy(client, {
     get(target, prop) {
       if (prop === 'chat') {
         return new Proxy(target.chat, {
@@ -97,6 +99,63 @@ export function createOpenAIAdapter<T extends { chat: { completions: { create: (
       return (target as any)[prop];
     },
   });
+
+  markPatched(wrapped as object);
+  return wrapped;
+}
+
+/** @alias createOpenAIAdapter — Python parity name (openai chat completions). */
+export const createOpenAICompletionAdapter = createOpenAIAdapter;
+
+/**
+ * Wrap an OpenAI Responses-API client so calls to `client.responses.create`
+ * emit `klira.llm.openai.responses` spans. Mirrors Python's split between
+ * the chat-completions adapter and the responses adapter.
+ */
+export function createOpenAIResponsesAdapter<T extends { responses: { create: (...args: any[]) => any } }>(
+  client: T,
+): T {
+  if (isPatched(client as object)) return client;
+  const originalCreate = client.responses.create.bind(client.responses);
+
+  const instrumentedCreate = async (params: any, ...rest: any[]) => {
+    const model = params.model ?? 'unknown';
+    const messages = Array.isArray(params.input)
+      ? params.input.map((m: any) => ({ role: m.role, content: m.content }))
+      : params.input
+        ? [{ role: 'user', content: String(params.input) }]
+        : [];
+
+    return withLLMSpan(
+      'openai.responses',
+      { model, messages },
+      async () => originalCreate(params, ...rest),
+      (response: any): LLMCallResult => ({
+        model: response.model ?? model,
+        inputTokens: response.usage?.input_tokens,
+        outputTokens: response.usage?.output_tokens,
+        finishReasons: response.status ? [response.status] : [],
+        output: response.output_text ?? response.output?.[0]?.content?.[0]?.text,
+      }),
+    );
+  };
+
+  const wrapped = new Proxy(client, {
+    get(target, prop) {
+      if (prop === 'responses') {
+        return new Proxy(target.responses, {
+          get(rTarget, rProp) {
+            if (rProp === 'create') return instrumentedCreate;
+            return (rTarget as any)[rProp];
+          },
+        });
+      }
+      return (target as any)[prop];
+    },
+  });
+
+  markPatched(wrapped as object);
+  return wrapped;
 }
 
 /**
