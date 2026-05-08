@@ -17,7 +17,6 @@ import {
 import { initPipeline, shutdownPipeline, resetPipeline } from './observability/pipeline.js';
 import { autoPatchInstalledLLMs } from './adapters/auto-patch.js';
 import { GuardrailsEngine } from './guardrails/engine.js';
-import { BuiltInLLMFallbackEvaluator } from './guardrails/llm-fallback.js';
 
 // ---------------------------------------------------------------------------
 // Klira — static class (renamed from KliraAI)
@@ -64,25 +63,29 @@ export class Klira {
       // Best-effort auto-patch installed LLM SDKs (Python parity).
       await autoPatchInstalledLLMs();
 
-      // Wire the built-in LLM fallback evaluator onto the singleton
-      // engine when the customer configured a provider.
-      //
-      // PROD-764 — `getInstance(config)` ignores the config argument when
-      // a singleton already exists (e.g. across init→shutdown→init or
-      // tests that pre-seed the engine). We need to both attach the
-      // evaluator AND flip `config.llmFallbackEnabled` on the existing
-      // engine — `runLifecycle` gates on that flag, not on whether a
-      // service is configured.
+      // PROD-764 — wire policy-loading config (and, if requested, the
+      // LLM fallback evaluator) onto the GuardrailsEngine singleton.
+      // Always seed the engine with config from `Klira.init` so that
+      // the lazy first-`withGuardrails` construction picks up
+      // `policiesEndpoint` / `useRemotePolicies` / `policiesPath`.
+      // Without this, those config knobs were silently dropped.
+      const engine = GuardrailsEngine.getInstance({
+        fastRulesEnabled: config.guardrails.fastRulesEnabled,
+        augmentationEnabled: config.guardrails.augmentationEnabled,
+        llmFallbackEnabled:
+          config.guardrails.llmFallbackEnabled || Boolean(config.llmFallback.provider),
+        failureMode: config.guardrails.failureMode,
+        policyPath: config.policiesPath,
+        policiesEndpoint: config.policiesEndpoint,
+        useRemotePolicies: config.useRemotePolicies,
+        policyApiEndpoint: config.policyApiEndpoint,
+        apiKey: config.apiKey,
+      });
+
       if (config.llmFallback.provider) {
-        const engine = GuardrailsEngine.getInstance({
-          llmFallbackEnabled: true,
-          llmService: new BuiltInLLMFallbackEvaluator({
-            provider: config.llmFallback.provider,
-            model: config.llmFallback.model,
-            apiKey: config.llmFallback.apiKey,
-            onError: config.llmFallback.onError,
-          }),
-        });
+        // `getInstance(config)` ignored the config arg above because the
+        // singleton may already exist (init → shutdown → init, or tests).
+        // Configure the fallback service explicitly and flip the flag.
         engine['llmFallback'].configureBuiltIn({
           provider: config.llmFallback.provider,
           model: config.llmFallback.model,

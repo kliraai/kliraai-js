@@ -1,7 +1,8 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { Klira } from '../index.js';
-import { initPipeline } from '../observability/pipeline.js';
+import { initPipeline, resetPipeline } from '../observability/pipeline.js';
 import type { KliraConfig } from '../types/index.js';
+import { GuardrailsEngine } from '../guardrails/engine.js';
 
 describe('Klira.init() & pipeline', () => {
   afterEach(async () => {
@@ -96,5 +97,60 @@ describe('Klira.init() & pipeline', () => {
     // Must emit these (matches Python's resource).
     expect(attrs['service.name']).toBe('parity-test');
     expect(attrs['klira.sdk.version']).toBe('2.0.0');
+  });
+
+});
+
+// PROD-764 — `policiesEndpoint` and `useRemotePolicies` were silently
+// dropped before this fix because the engine was constructed lazily
+// with no config. `Klira.init` now seeds the singleton with policy
+// config from `KliraConfig`. Run in its own describe block so the
+// pipeline.test afterEach's `Klira.shutdown()` reset doesn't race
+// with these assertions.
+describe('Klira.init() forwards policy config to the GuardrailsEngine singleton', () => {
+  beforeEach(async () => {
+    // The prior describe block's "drop klira.schema.version" test calls
+    // `initPipeline` directly with `endpoint: 'http://localhost:4318'`,
+    // which leaves a global TracerProvider pointing at a non-existent
+    // local collector. If we don't clear that pipeline before our own
+    // `Klira.init`, our `afterEach`'s `Klira.shutdown()` will trigger a
+    // forceFlush against `localhost:4318` and emit a noisy ECONNREFUSED.
+    resetPipeline();
+    GuardrailsEngine.reset();
+    await Klira.shutdown();
+  });
+  afterEach(async () => {
+    await Klira.shutdown();
+    resetPipeline();
+    GuardrailsEngine.reset();
+  });
+
+  it('forwards policiesEndpoint + useRemotePolicies', async () => {
+    await Klira.init({
+      appName: 'cfg-fwd-1',
+      apiKey: 'klira_test_key',
+      tracingEnabled: false,
+      policiesEndpoint: 'https://dev.api.getklira.com',
+      useRemotePolicies: true,
+    });
+
+    const engine = GuardrailsEngine.getInstance();
+    const cfg = (engine as unknown as { config: { policiesEndpoint?: string; useRemotePolicies?: boolean } }).config;
+    expect(cfg.policiesEndpoint).toBe('https://dev.api.getklira.com');
+    expect(cfg.useRemotePolicies).toBe(true);
+  });
+
+  it('forwards policiesPath when configured', async () => {
+    await Klira.init({
+      appName: 'cfg-fwd-2',
+      apiKey: 'klira_test_key',
+      tracingEnabled: false,
+      policiesPath: '/custom/policies.yaml',
+    });
+
+    const engine = GuardrailsEngine.getInstance();
+    const cfg = (engine as unknown as { config: { policyPath?: string; useRemotePolicies?: boolean } }).config;
+    expect(cfg.policyPath).toBe('/custom/policies.yaml');
+    expect(cfg.useRemotePolicies).toBe(false);
   });
 });

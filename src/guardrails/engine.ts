@@ -47,8 +47,38 @@ export interface GuardrailsEngineConfig {
   readonly llmService?: LLMService;
   readonly failureMode?: 'open' | 'closed';
   readonly policyPath?: string;
+
+  /**
+   * Remote endpoint for fetching policies. Accepts either a base URL
+   * (e.g. `https://dev.api.getklira.com`) or a full URL with the
+   * `/v1/policies` path (e.g. `https://dev.api.getklira.com/v1/policies`).
+   * When the path is missing, `/v1/policies` is appended at fetch time.
+   *
+   * Mirrors Python's `policies_endpoint`. Only used when `useRemotePolicies`
+   * is `true`.
+   */
+  readonly policiesEndpoint?: string;
+
+  /**
+   * When `true` and `policiesEndpoint` is set, fetch policies from the
+   * remote endpoint instead of YAML / defaults. When `false` (default),
+   * YAML at `policyPath` is preferred, falling back to bundled defaults.
+   *
+   * Mirrors Python's `use_remote_policies`.
+   */
+  readonly useRemotePolicies?: boolean;
+
+  /** @deprecated Use `policiesEndpoint` + `useRemotePolicies = true`. */
   readonly policyApiEndpoint?: string;
+
   readonly apiKey?: string;
+}
+
+/** Append `/v1/policies` if the URL doesn't already end with it. */
+function normalizePoliciesUrl(raw: string): string {
+  const stripped = raw.replace(/\/+$/, '');
+  if (stripped.endsWith('/v1/policies')) return stripped;
+  return `${stripped}/v1/policies`;
 }
 
 // ---------------------------------------------------------------------------
@@ -125,14 +155,29 @@ export class GuardrailsEngine {
       try {
         let policies: PolicyDefinition[] = [];
 
-        if (this.config.policyApiEndpoint) {
+        // Remote loading (Python parity): only when `useRemotePolicies`
+        // is set AND a target endpoint is configured. The endpoint can
+        // come from the modern `policiesEndpoint` field or the legacy
+        // `policyApiEndpoint` (kept for back-compat). Both accept either
+        // a base URL or the full `/v1/policies` URL.
+        const remoteUrl = this.config.policiesEndpoint ?? this.config.policyApiEndpoint;
+        if (this.config.useRemotePolicies && remoteUrl) {
           policies = await loadPoliciesFromAPI(
-            this.config.policyApiEndpoint,
+            normalizePoliciesUrl(remoteUrl),
+            this.config.apiKey,
+          );
+        } else if (!this.config.useRemotePolicies && this.config.policyApiEndpoint) {
+          // Legacy path: `policyApiEndpoint` alone (without
+          // `useRemotePolicies`) used to trigger the API fetch directly.
+          // Preserved so existing consumers don't break.
+          policies = await loadPoliciesFromAPI(
+            normalizePoliciesUrl(this.config.policyApiEndpoint),
             this.config.apiKey,
           );
         }
 
-        // Fall back to YAML / default if API returned nothing
+        // Fall back to YAML / default if remote returned nothing or
+        // wasn't configured.
         if (policies.length === 0) {
           policies = this.config.policyPath
             ? loadPoliciesFromYAML(this.config.policyPath)
