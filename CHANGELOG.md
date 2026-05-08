@@ -7,11 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-05-07
+## [0.2.1] - 2026-05-07
 
 ### Summary
 
-The 0.2.0 release brings the JavaScript SDK to **wire-format parity** with the Python SDK (`kliraai-sdk`). After this release, both SDKs emit byte-for-byte identical OpenTelemetry spans on the canonical scenarios — verified end-to-end by running both `healthcare_agent.py` and the JS port of the same agent and diffing the captured traces. ([PROD-764])
+The 0.2.1 release brings the JavaScript SDK to **wire-format parity** with the Python SDK (`kliraai-sdk`). After this release, both SDKs emit byte-for-byte identical OpenTelemetry spans on the canonical scenarios — verified end-to-end by running both `healthcare_agent.py` and the JS port of the same agent and diffing the captured traces. ([PROD-764])
 
 The release also adds the full Python parity surface that wasn't shipped in 0.1.x: the `withGuardrails` HOF, `userMessage` wrapper, OpenAI Responses adapter, auto-patching at `Klira.init`, AsyncLocalStorage guideline transport, provider-shape augmentation helpers, the `BuiltInLLMFallbackEvaluator`, full PHI scrubbing pipeline, eval-endpoint switching, and 11 new configuration knobs with `KLIRA_*` env-var equivalents.
 
@@ -23,8 +23,8 @@ The release also adds the full Python parity surface that wasn't shipped in 0.1.
 - **`tool(name, fn, { fhir })`** — short alias for the FHIR resource type, in addition to the existing `fhirResourceType`.
 
 #### LLM adapters
-- **OpenAI Responses adapter** (`klira/openai`'s `createOpenAIResponsesAdapter`) — wraps `client.responses.create`; emits `klira.llm.openai.responses` spans.
-- **Subpath exports for Anthropic, Gemini, Ollama, LiteLLM** — `klira/anthropic`, `klira/gemini`, `klira/ollama`, `klira/litellm`.
+- **OpenAI Responses adapter** (`@klira-ai/sdk/openai`'s `createOpenAIResponsesAdapter`) — wraps `client.responses.create`; emits `klira.llm.openai.responses` spans.
+- **Subpath exports for Anthropic, Gemini, Ollama, LiteLLM** — `@klira-ai/sdk/anthropic`, `@klira-ai/sdk/gemini`, `@klira-ai/sdk/ollama`, `@klira-ai/sdk/litellm`.
 - **Auto-patching** at `Klira.init` — any installed provider SDK is instrumented automatically (`openai`, `@anthropic-ai/sdk`, `@google/generative-ai`, `ollama`, `litellm`). Idempotency sentinel (`Symbol.for('klira.patched')`) prevents double-wrapping. ([PROD-483])
 - **Provider-shape augmentation helpers** — `buildAugmentedMessages`, `buildAugmentedSystemKwarg` (Anthropic), `buildAugmentedInstructions` (OpenAI Responses), `buildAugmentedContents` (Gemini), `verifyAugmentation`.
 

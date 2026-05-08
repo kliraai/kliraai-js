@@ -32,7 +32,7 @@ const PROVIDER = 'openai.completion';
  * @example
  * ```ts
  * import OpenAI from 'openai';
- * import { createOpenAIAdapter } from 'klira/adapters/openai';
+ * import { createOpenAIAdapter } from '@klira-ai/sdk/openai';
  *
  * const openai = createOpenAIAdapter(new OpenAI({ apiKey: '...' }));
  * const result = await openai.chat.completions.create({

@@ -1,6 +1,6 @@
 {
-  "name": "klira",
-  "version": "0.2.0",
+  "name": "@klira-ai/sdk",
+  "version": "0.2.1",
   "type": "module",
   "description": "Klira AI Compliance for GenAI - JavaScript/TypeScript SDK for LLM observability, tracing, and guardrails",
   "main": "dist/index.js",
@@ -56,7 +56,8 @@
       "types": "./dist/testing/index.d.ts",
       "import": "./dist/testing/index.js",
       "require": "./dist/testing/index.cjs"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist",
@@ -180,28 +181,92 @@
       "path": "dist/index.js",
       "limit": "150 KB",
       "import": "{ Klira }",
-      "ignore": ["async_hooks", "events", "fs", "path", "url", "crypto", "http", "https", "net", "tls", "zlib", "stream", "buffer", "util", "os"]
+      "ignore": [
+        "async_hooks",
+        "events",
+        "fs",
+        "path",
+        "url",
+        "crypto",
+        "http",
+        "https",
+        "net",
+        "tls",
+        "zlib",
+        "stream",
+        "buffer",
+        "util",
+        "os"
+      ]
     },
     {
       "name": "OpenAI Adapter (ESM)",
       "path": "dist/adapters/openai/index.js",
       "limit": "75 KB",
       "import": "{ createOpenAIAdapter }",
-      "ignore": ["async_hooks", "events", "fs", "path", "url", "crypto", "http", "https", "net", "tls", "zlib", "stream", "buffer", "util", "os"]
+      "ignore": [
+        "async_hooks",
+        "events",
+        "fs",
+        "path",
+        "url",
+        "crypto",
+        "http",
+        "https",
+        "net",
+        "tls",
+        "zlib",
+        "stream",
+        "buffer",
+        "util",
+        "os"
+      ]
     },
     {
       "name": "Custom Adapter (ESM)",
       "path": "dist/adapters/custom/index.js",
       "limit": "60 KB",
       "import": "{ createCustomAdapter }",
-      "ignore": ["async_hooks", "events", "fs", "path", "url", "crypto", "http", "https", "net", "tls", "zlib", "stream", "buffer", "util", "os"]
+      "ignore": [
+        "async_hooks",
+        "events",
+        "fs",
+        "path",
+        "url",
+        "crypto",
+        "http",
+        "https",
+        "net",
+        "tls",
+        "zlib",
+        "stream",
+        "buffer",
+        "util",
+        "os"
+      ]
     },
     {
       "name": "LangChain Adapter (ESM)",
       "path": "dist/adapters/langchain/index.js",
       "limit": "50 KB",
       "import": "{ createLangChainAdapter }",
-      "ignore": ["async_hooks", "events", "fs", "path", "url", "crypto", "http", "https", "net", "tls", "zlib", "stream", "buffer", "util", "os"]
+      "ignore": [
+        "async_hooks",
+        "events",
+        "fs",
+        "path",
+        "url",
+        "crypto",
+        "http",
+        "https",
+        "net",
+        "tls",
+        "zlib",
+        "stream",
+        "buffer",
+        "util",
+        "os"
+      ]
     }
   ]
 }

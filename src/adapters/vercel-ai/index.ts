@@ -44,7 +44,7 @@ export interface VercelAIAdapterOptions {
  * @example
  * ```ts
  * import { generateText } from 'ai';
- * import { createVercelAIAdapter } from 'klira/adapters/vercel-ai';
+ * import { createVercelAIAdapter } from '@klira-ai/sdk/vercel-ai';
  *
  * const kliraAI = createVercelAIAdapter();
  * const result = await kliraAI.generateText({

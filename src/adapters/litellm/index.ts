@@ -20,7 +20,7 @@ const PROVIDER = 'litellm';
  *
  * @example
  * ```ts
- * import { createLiteLLMAdapter } from 'klira/adapters/litellm';
+ * import { createLiteLLMAdapter } from '@klira-ai/sdk/litellm';
  *
  * const litellm = createLiteLLMAdapter(litellmClient);
  * const result = await litellm.completion({

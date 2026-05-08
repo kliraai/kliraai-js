@@ -21,7 +21,7 @@ const PROVIDER = 'ollama';
  * @example
  * ```ts
  * import { Ollama } from 'ollama';
- * import { createOllamaAdapter } from 'klira/adapters/ollama';
+ * import { createOllamaAdapter } from '@klira-ai/sdk/ollama';
  *
  * const ollama = createOllamaAdapter(new Ollama());
  * const result = await ollama.chat({

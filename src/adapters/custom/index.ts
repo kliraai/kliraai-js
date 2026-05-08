@@ -13,7 +13,7 @@ import type { LLMCallOptions, LLMCallResult } from '../../types/index.js';
  *
  * @example
  * ```ts
- * import { instrumentLLMCall } from 'klira/adapters/custom';
+ * import { instrumentLLMCall } from '@klira-ai/sdk/custom';
  *
  * const result = await instrumentLLMCall(
  *   'my-llm',

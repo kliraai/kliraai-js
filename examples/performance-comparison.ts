@@ -3,8 +3,8 @@
  * Tests latency overhead introduced by Klira guardrails
  */
 
-import { KliraAI } from 'klira';
-import { createKliraAgent } from 'klira/custom';
+import { KliraAI } from '@klira-ai/sdk';
+import { createKliraAgent } from '@klira-ai/sdk/custom';
 import { openai } from '@ai-sdk/openai';
 import { generateText } from 'ai';
 

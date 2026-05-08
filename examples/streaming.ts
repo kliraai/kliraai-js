@@ -2,8 +2,8 @@
  * Streaming example with real-time guardrails for Klira AI SDK
  */
 
-import { KliraAI } from 'klira';
-import { createKliraVercelAI } from 'klira/vercel-ai';
+import { KliraAI } from '@klira-ai/sdk';
+import { createKliraVercelAI } from '@klira-ai/sdk/vercel-ai';
 import { openai } from '@ai-sdk/openai';
 import { streamText } from 'ai';
 

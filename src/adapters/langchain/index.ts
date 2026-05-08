@@ -20,7 +20,7 @@ export interface LangChainAdapterOptions {
  *
  * @example
  * ```ts
- * import { createLangChainAdapter } from 'klira/adapters/langchain';
+ * import { createLangChainAdapter } from '@klira-ai/sdk/langchain';
  *
  * const kliraLangChain = createLangChainAdapter();
  *

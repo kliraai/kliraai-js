@@ -21,7 +21,7 @@ const PROVIDER = 'anthropic';
  * @example
  * ```ts
  * import Anthropic from '@anthropic-ai/sdk';
- * import { createAnthropicAdapter } from 'klira/adapters/anthropic';
+ * import { createAnthropicAdapter } from '@klira-ai/sdk/anthropic';
  *
  * const anthropic = createAnthropicAdapter(new Anthropic({ apiKey: '...' }));
  * const result = await anthropic.messages.create({

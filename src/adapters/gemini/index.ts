@@ -21,7 +21,7 @@ const PROVIDER = 'gemini';
  * @example
  * ```ts
  * import { GoogleGenerativeAI } from '@google/generative-ai';
- * import { createGeminiAdapter } from 'klira/adapters/gemini';
+ * import { createGeminiAdapter } from '@klira-ai/sdk/gemini';
  *
  * const genAI = new GoogleGenerativeAI(apiKey);
  * const model = createGeminiAdapter(genAI.getGenerativeModel({ model: 'gemini-pro' }));
