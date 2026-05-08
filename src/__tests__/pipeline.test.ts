@@ -146,11 +146,24 @@ describe('Klira.init() forwards policy config to the GuardrailsEngine singleton'
       apiKey: 'klira_test_key',
       tracingEnabled: false,
       policiesPath: '/custom/policies.yaml',
+      useRemotePolicies: false,   // override the Python-parity default to test the local-YAML path
     });
 
     const engine = GuardrailsEngine.getInstance();
     const cfg = (engine as unknown as { config: { policyPath?: string; useRemotePolicies?: boolean } }).config;
     expect(cfg.policyPath).toBe('/custom/policies.yaml');
     expect(cfg.useRemotePolicies).toBe(false);
+  });
+
+  it('defaults to Python parity: useRemotePolicies=true, policiesEndpoint=https://api.getklira.com/v1/policies', async () => {
+    await Klira.init({
+      appName: 'cfg-fwd-3',
+      apiKey: 'klira_test_key',
+      tracingEnabled: false,
+    });
+
+    const config = Klira.getConfig();
+    expect(config.useRemotePolicies).toBe(true);
+    expect(config.policiesEndpoint).toBe('https://api.getklira.com/v1/policies');
   });
 });

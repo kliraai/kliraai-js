@@ -17,6 +17,7 @@ import { KliraConfigError } from '../types/index.js';
 // ---------------------------------------------------------------------------
 
 const DEFAULT_ENDPOINT = 'https://api.getklira.com';
+const DEFAULT_POLICIES_ENDPOINT = 'https://api.getklira.com/v1/policies';
 
 const ALLOWED_PHI_METHODS: readonly PhiAnonymizationMethod[] = ['redact', 'mask', 'hash', 'remove'];
 
@@ -95,10 +96,16 @@ export function createConfig(options: KliraInitOptions): Readonly<KliraConfig> {
           (process.env.KLIRA_LLM_FALLBACK_ON_ERROR as 'allow' | 'block' | undefined) ??
           'allow'),
     }),
-    policiesEndpoint: options.policiesEndpoint ?? process.env.KLIRA_POLICIES_ENDPOINT,
+    // PROD-764 — Python parity: `policies_endpoint` defaults to
+    // `https://api.getklira.com/v1/policies` and `use_remote_policies`
+    // defaults to `True`. Without these defaults, the JS SDK silently
+    // fell back to bundled YAML even when the customer expected to
+    // pull policies from the platform.
+    policiesEndpoint:
+      options.policiesEndpoint ?? process.env.KLIRA_POLICIES_ENDPOINT ?? DEFAULT_POLICIES_ENDPOINT,
     disableExternalTracing:
       options.disableExternalTracing ?? envBool('KLIRA_DISABLE_EXTERNAL_TRACING', false),
-    useRemotePolicies: options.useRemotePolicies ?? envBool('KLIRA_USE_REMOTE_POLICIES', false),
+    useRemotePolicies: options.useRemotePolicies ?? envBool('KLIRA_USE_REMOTE_POLICIES', true),
     batchDelayMs: options.batchDelayMs ?? envInt('KLIRA_BATCH_DELAY_MS', 500),
 
     guardrails: Object.freeze({
