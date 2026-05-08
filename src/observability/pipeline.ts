@@ -18,8 +18,7 @@ import {
 } from '@opentelemetry/sdk-trace-base';
 import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-hooks';
 import { resourceFromAttributes } from '@opentelemetry/resources';
-import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
-import { SCHEMA_VERSION } from '../contracts/trace-schema.js';
+import { ATTR_SERVICE_NAME } from '@opentelemetry/semantic-conventions';
 import type { KliraConfig } from '../types/index.js';
 import { KliraOTLPSpanExporter } from './exporter.js';
 import { createKliraBatchProcessor } from './processor.js';
@@ -59,10 +58,13 @@ export function initPipeline(config: Readonly<KliraConfig>): Tracer {
 
   takeoverGlobalTracerProvider();
 
+  // Python parity (PROD-764): match the resource attributes Python's
+  // SDK emits — `service.name` plus `klira.sdk.version`. Python does not
+  // emit `service.version` or `klira.sdk.name`; the `telemetry.sdk.*`
+  // attributes are populated automatically by the OTel SDK on each side
+  // (with the language-appropriate values, e.g. `nodejs` vs `python`).
   const resource = resourceFromAttributes({
     [ATTR_SERVICE_NAME]: config.appName,
-    [ATTR_SERVICE_VERSION]: SCHEMA_VERSION,
-    'klira.sdk.name': 'klira-js',
     'klira.sdk.version': '2.0.0',
   });
 

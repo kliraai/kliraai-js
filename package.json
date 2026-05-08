@@ -82,7 +82,7 @@
     "build:prod": "NODE_ENV=production npm run build",
     "size": "size-limit",
     "size:why": "size-limit --why",
-    "prepublishOnly": "npm run build:prod && npm run test && npm run size"
+    "prepublishOnly": "npm run build:prod && vitest --run && npm run size"
   },
   "keywords": [
     "ai",

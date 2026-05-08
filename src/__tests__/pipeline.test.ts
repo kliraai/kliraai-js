@@ -62,9 +62,9 @@ describe('Klira.init() & pipeline', () => {
     }).toThrow();
   });
 
-  // PROD-764 Phase 1 — drop klira.schema.version from emitted resource
-  it('does not emit klira.schema.version as a resource attribute', async () => {
-    const fakeConfig: KliraConfig = Object.freeze({
+  // PROD-764 — emit only the resource attributes Python emits
+  it('emits service.name + klira.sdk.version as resource attrs and nothing else Klira-specific', async () => {
+    const fakeConfig = Object.freeze({
       apiKey: undefined,
       appName: 'parity-test',
       environment: 'test',
@@ -80,7 +80,7 @@ describe('Klira.init() & pipeline', () => {
         llmFallbackEnabled: false,
         failureMode: 'open' as const,
       }),
-    });
+    }) as unknown as KliraConfig;
 
     const tracer = initPipeline(fakeConfig);
     const span = tracer.startSpan('klira.workflow.parity-test');
@@ -88,7 +88,13 @@ describe('Klira.init() & pipeline', () => {
     const resource: { attributes?: Record<string, unknown>; _attributes?: Record<string, unknown> } = (span as unknown as { resource: { attributes?: Record<string, unknown>; _attributes?: Record<string, unknown> } }).resource;
     const attrs = resource.attributes ?? resource._attributes ?? {};
 
+    // Python parity: must NOT emit these.
     expect(attrs['klira.schema.version']).toBeUndefined();
-    expect(attrs['klira.sdk.name']).toBe('klira-js');
+    expect(attrs['service.version']).toBeUndefined();
+    expect(attrs['klira.sdk.name']).toBeUndefined();
+
+    // Must emit these (matches Python's resource).
+    expect(attrs['service.name']).toBe('parity-test');
+    expect(attrs['klira.sdk.version']).toBe('2.0.0');
   });
 });
