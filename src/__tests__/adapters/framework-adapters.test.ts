@@ -235,8 +235,8 @@ describe('Custom adapter', () => {
     const spans = exporter.getFinishedSpans();
     const span = spans.find((s) => s.name === 'klira.llm.test');
     expect(span).toBeDefined();
-    // The augmentation happens in the messages passed to the span
-    const input = span!.attributes['klira.input'] as string;
-    expect(input).toContain('Be careful');
+    // PROD-764 — prompt is captured under gen_ai.prompt now (Python parity).
+    const prompt = span!.attributes['gen_ai.prompt'] as string;
+    expect(prompt).toContain('Be careful');
   });
 });

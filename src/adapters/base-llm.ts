@@ -2,16 +2,17 @@
  * Klira SDK v2 — Shared LLM adapter utilities.
  *
  * Creates klira.llm.{provider} spans with gen_ai.* semantic convention attributes.
- * Truncates prompt to 10k chars, output to 5k chars per contract.
+ * Truncates prompt to 10k chars, output to 5k chars (silent — no `[truncated]`
+ * sentinel; Python parity).
  */
 
-import { type Span, SpanStatusCode } from '@opentelemetry/api';
-import { getTracer } from '../observability/pipeline.js';
+import { SpanStatusCode, type Span } from '@opentelemetry/api';
 import {
   PROMPT_TRUNCATION_LIMIT,
   OUTPUT_TRUNCATION_LIMIT,
 } from '../contracts/adapter-interfaces.js';
 import type { LLMCallOptions, LLMCallResult } from '../types/index.js';
+import { getTracer } from '../observability/pipeline.js';
 
 // ---------------------------------------------------------------------------
 // Span creation
@@ -20,43 +21,126 @@ import type { LLMCallOptions, LLMCallResult } from '../types/index.js';
 /**
  * Run an LLM call inside a `klira.llm.{provider}` span.
  *
- * Sets `gen_ai.*` attributes from request and response.
+ * **Wire shape (Python parity, PROD-764).** The LLM span carries only:
+ *
+ *   - `klira.entity_type = "llm"`
+ *   - `gen_ai.system`, `gen_ai.request.model`, `gen_ai.response.model`
+ *   - `gen_ai.usage.input_tokens` / `output_tokens`, `gen_ai.response.finish_reasons`
+ *   - `gen_ai.prompt`
+ *   - `klira.output`
+ *
+ * Python's `klira.llm.*` span is opinionated about staying lean to keep
+ * the GenAI-conventions surface clean, so JS deliberately omits:
+ *
+ *   - `klira.entity_name` — present on most other Klira spans, but not on
+ *     `klira.llm.*`. Python's adapter doesn't set it; verified against
+ *     the captured OTLP payload.
+ *   - `klira.user_id`, `klira.conversation_id`, `klira.framework` — these
+ *     propagate from the OTel context onto other wrapper spans via
+ *     `applyRuntimeAttrs`, but the LLM span path explicitly skips it.
+ *
+ * The global CLAUDE.md says `klira.entity_name` and `klira.user_id` are
+ * required on every Klira span; that's the documented spec, but Python's
+ * actual emission is the source of truth for the wire shape, and the JS
+ * SDK matches Python. Spec reconciliation is tracked outside this code.
+ *
+ * For **streaming** calls, use `startStreamingLLMSpan` /
+ * `finalizeStreamSpan` / `failStreamSpan` instead — `withLLMSpan`'s
+ * `finally` ends the span the moment its inner function returns, which
+ * for streaming would close the span before the first token flows.
  */
+export interface WithLLMSpanOptions {
+  /**
+   * Override `gen_ai.system`. Defaults to the *base* of `provider` —
+   * everything before the first `.`. So `provider="openai.completion"`
+   * yields `gen_ai.system = "openai"` (Python parity), while
+   * `provider="anthropic"` yields `gen_ai.system = "anthropic"`.
+   */
+  system?: string;
+}
+
 export async function withLLMSpan<T>(
   provider: string,
   options: LLMCallOptions,
   fn: (span: Span) => Promise<T>,
   extractResult?: (response: T) => LLMCallResult,
+  opts: WithLLMSpanOptions = {},
 ): Promise<T> {
   const tracer = getTracer();
   const spanName = `klira.llm.${provider}`;
+  const system = (opts.system ?? provider.split('.')[0] ?? provider).toLowerCase();
 
-  return tracer.startActiveSpan(spanName, async (span: Span) => {
+  return tracer.startActiveSpan(spanName, async (span) => {
+    span.setAttribute('klira.entity_type', 'llm');
+    span.setAttribute('gen_ai.system', system);
+    span.setAttribute('gen_ai.request.model', options.model);
+    if (options.messages && options.messages.length > 0) {
+      span.setAttribute(
+        'gen_ai.prompt',
+        truncate(JSON.stringify(options.messages), PROMPT_TRUNCATION_LIMIT),
+      );
+    }
+
     try {
-      // Set request attributes
-      setRequestAttributes(span, provider, options);
-
       const response = await fn(span);
-
-      // Set response attributes
       if (extractResult) {
-        const result = extractResult(response);
-        setResponseAttributes(span, result);
+        setResponseAttributes(span, extractResult(response));
       }
-
       span.setStatus({ code: SpanStatusCode.OK });
       return response;
     } catch (error) {
-      span.setStatus({
-        code: SpanStatusCode.ERROR,
-        message: error instanceof Error ? error.message : String(error),
-      });
-      span.recordException(error instanceof Error ? error : new Error(String(error)));
+      span.recordException(error as Error);
+      span.setStatus({ code: SpanStatusCode.ERROR, message: (error as Error).message });
       throw error;
     } finally {
       span.end();
     }
   });
+}
+
+/**
+ * Open an LLM span for a streaming call, return the span so the adapter
+ * can hold it, set request attributes, and run the wrapped network call.
+ * The caller is responsible for calling `finalizeStreamSpan(span, result)`
+ * when the stream resolves (and `failStreamSpan(span, err)` on error).
+ *
+ * Use this instead of `withLLMSpan` for `params.stream === true` so the
+ * span doesn't close before tokens flow.
+ */
+export function startStreamingLLMSpan(
+  provider: string,
+  options: LLMCallOptions,
+  opts: WithLLMSpanOptions = {},
+): Span {
+  const tracer = getTracer();
+  const spanName = `klira.llm.${provider}`;
+  const system = (opts.system ?? provider.split('.')[0] ?? provider).toLowerCase();
+  const span = tracer.startSpan(spanName);
+  span.setAttribute('klira.entity_type', 'llm');
+  span.setAttribute('gen_ai.system', system);
+  span.setAttribute('gen_ai.request.model', options.model);
+  if (options.messages && options.messages.length > 0) {
+    span.setAttribute(
+      'gen_ai.prompt',
+      truncate(JSON.stringify(options.messages), PROMPT_TRUNCATION_LIMIT),
+    );
+  }
+  return span;
+}
+
+export function finalizeStreamSpan(span: Span, result: LLMCallResult): void {
+  setResponseAttributes(span, result);
+  span.setStatus({ code: SpanStatusCode.OK });
+  span.end();
+}
+
+export function failStreamSpan(span: Span, error: unknown): void {
+  span.recordException(error as Error);
+  span.setStatus({
+    code: SpanStatusCode.ERROR,
+    message: error instanceof Error ? error.message : String(error),
+  });
+  span.end();
 }
 
 // ---------------------------------------------------------------------------
@@ -69,16 +153,13 @@ export function setRequestAttributes(
   options: LLMCallOptions,
 ): void {
   span.setAttribute('klira.entity_type', 'llm');
-  span.setAttribute('klira.entity_name', provider);
   span.setAttribute('gen_ai.system', provider.toLowerCase());
   span.setAttribute('gen_ai.request.model', options.model);
 
-  // Capture prompt (truncated)
   if (options.messages && options.messages.length > 0) {
-    const promptText = messagesToText(options.messages);
     span.setAttribute(
-      'klira.input',
-      truncate(promptText, PROMPT_TRUNCATION_LIMIT),
+      'gen_ai.prompt',
+      truncate(JSON.stringify(options.messages), PROMPT_TRUNCATION_LIMIT),
     );
   }
 }
@@ -143,14 +224,7 @@ export function augmentMessages(
 // Utilities
 // ---------------------------------------------------------------------------
 
-function messagesToText(messages: Array<Record<string, unknown>>): string {
-  return messages
-    .map((m) => String(m.content ?? ''))
-    .filter(Boolean)
-    .join('\n');
-}
-
 function truncate(text: string, limit: number): string {
   if (text.length <= limit) return text;
-  return text.slice(0, limit) + '...[truncated]';
+  return text.slice(0, limit);
 }

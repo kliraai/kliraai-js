@@ -105,9 +105,11 @@ export class PhiAwareExporter implements SpanExporter {
       }
     }
 
-    // Set PHI metadata attributes
-    (attrs as any)['klira.phi.detected'] = detected;
+    // Only emit PHI metadata when something was actually detected. Python
+    // parity (PROD-764) — emitting `klira.phi.detected: false` on every
+    // span would double the attribute count for the common case.
     if (detected) {
+      (attrs as any)['klira.phi.detected'] = true;
       (attrs as any)['klira.phi.entity_count'] = totalEntities;
       (attrs as any)['klira.phi.entity_types'] = [...allEntityTypes].join(',');
     }

@@ -10,6 +10,7 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 import yaml from 'js-yaml';
 import type { PolicyDefinition, PolicyRule } from '../types/index.js';
+import { pkgLog } from '../utils/logger.js';
 
 // ---------------------------------------------------------------------------
 // Pattern cache with compiled regexes
@@ -80,8 +81,17 @@ interface RawYAMLPolicy {
   readonly rules?: readonly PolicyRule[];
 }
 
-interface PolicyFile {
+interface PolicyEnvelope {
   readonly policies: RawYAMLPolicy[];
+}
+
+function unwrapPolicies(data: unknown): RawYAMLPolicy[] {
+  if (Array.isArray(data)) return data as RawYAMLPolicy[];
+  if (data && typeof data === 'object' && 'policies' in data) {
+    const envelope = data as PolicyEnvelope;
+    if (Array.isArray(envelope.policies)) return envelope.policies as RawYAMLPolicy[];
+  }
+  return [];
 }
 
 function validateRawPolicy(p: Record<string, unknown>): boolean {
@@ -146,12 +156,38 @@ function transformYAMLPolicy(raw: RawYAMLPolicy): PolicyDefinition {
   };
 }
 
+/**
+ * Reject YAML aliases / anchors before parsing — Python parity hardening.
+ *
+ * Aliases let one node be referenced from another, which is a known
+ * billion-laughs / DoS vector and lets a hostile policy file expand to
+ * arbitrary size in memory. Klira policies don't need them; if a file
+ * uses them we drop the load and warn rather than risk the parse.
+ *
+ * Lexical detection on the raw source intentionally over-rejects
+ * (matches inside string literals too). That's fine — a Klira policy
+ * has no legitimate reason to embed a literal `*name` token.
+ */
+function containsYamlAliases(content: string): boolean {
+  // Strip comments before scanning to avoid `# anchor &foo` false positives.
+  const stripped = content.replace(/#[^\n]*/g, '');
+  // `&anchor` or `*alias` as a YAML node (preceded by whitespace or `:` and a space).
+  return /(^|[\s:])[&*][A-Za-z_][\w-]*/m.test(stripped);
+}
+
 export function loadPoliciesFromYAML(filePath: string): PolicyDefinition[] {
   try {
     const content = fs.readFileSync(filePath, 'utf-8');
-    const data = yaml.load(content) as PolicyFile;
-    if (!data?.policies || !Array.isArray(data.policies)) return [];
-    return data.policies
+    if (containsYamlAliases(content)) {
+      // YAML aliases are a security signal (DoS hardening) — operators
+      // should always see the rejection, even on quiet (non-verbose) setups.
+      pkgLog.warn(
+        `YAML aliases / anchors are not allowed in policy files (${filePath}); ignoring.`,
+      );
+      return [];
+    }
+    const data = yaml.load(content);
+    return unwrapPolicies(data)
       .filter((p: any) => validateRawPolicy(p))
       .map(transformYAMLPolicy);
   } catch {
@@ -189,9 +225,10 @@ export async function loadPoliciesFromAPI(
 
     const response = await fetch(endpoint, { headers });
     if (!response.ok) return [];
-    const data = (await response.json()) as PolicyFile;
-    if (!data?.policies || !Array.isArray(data.policies)) return [];
-    return data.policies.filter((p: any) => validateRawPolicy(p)).map(transformYAMLPolicy);
+    const data = await response.json();
+    return unwrapPolicies(data)
+      .filter((p: any) => validateRawPolicy(p))
+      .map(transformYAMLPolicy);
   } catch {
     return [];
   }

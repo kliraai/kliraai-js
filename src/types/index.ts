@@ -8,11 +8,18 @@
 // Configuration
 // ---------------------------------------------------------------------------
 
+export type PhiAnonymizationMethod = 'redact' | 'mask' | 'hash' | 'remove';
+
 export interface KliraInitOptions {
   apiKey?: string;
   appName: string;
   environment?: string;
   tracingEnabled?: boolean;
+  /**
+   * Telemetry endpoint *base URL* — `/v1/traces` (or `/evals/v1/traces`
+   * when `evalsRun` is set) is appended at export time. Legacy values
+   * with a trailing `/v1/traces` are accepted for backward compatibility.
+   */
   endpoint?: string;
   verbose?: boolean;
   debugMode?: boolean;
@@ -20,6 +27,35 @@ export interface KliraInitOptions {
   // Policy loading
   policiesPath?: string;
   policyApiEndpoint?: string;
+
+  // PROD-764 Phase 6 — Python parity surface
+  /** Framework label propagated as `klira.framework` onto every Klira span. */
+  framework?: string;
+  /** Clinical domain hint stamped onto user-message spans. */
+  clinicalDomain?: string;
+  /** When set, traces are routed to `/evals/v1/traces` and tagged. */
+  evalsRun?: string;
+  /** Eval dataset identifier — surfaced on user-message spans. */
+  datasetId?: string;
+  /** Enable PHI anonymization at export. `true` = default 'redact'. */
+  anonymization?: PhiAnonymizationMethod | true;
+  /** When false, only `klira.phi.detected` is exported. */
+  phiExportEntityDetails?: boolean;
+  /** Built-in LLM fallback provider configuration. */
+  llmFallback?: {
+    provider?: 'openai' | 'anthropic';
+    model?: string;
+    apiKey?: string;
+    onError?: 'allow' | 'block';
+  };
+  /** Remote policies endpoint base URL. */
+  policiesEndpoint?: string;
+  /** Disable any non-Klira tracer the user may already have installed. */
+  disableExternalTracing?: boolean;
+  /** Force-load policies from the remote endpoint instead of YAML/default. */
+  useRemotePolicies?: boolean;
+  /** Override the BatchSpanProcessor's scheduledDelayMillis (default 500). */
+  batchDelayMs?: number;
 
   // Guardrails
   guardrails?: {
@@ -36,11 +72,31 @@ export interface KliraConfig {
   readonly appName: string;
   readonly environment: string;
   readonly tracingEnabled: boolean;
+  /** Telemetry endpoint as a *base URL* (no trailing `/v1/traces`). */
   readonly endpoint: string;
   readonly verbose: boolean;
   readonly debugMode: boolean;
   readonly policiesPath: string | undefined;
   readonly policyApiEndpoint: string | undefined;
+
+  // PROD-764 Phase 6
+  readonly framework: string | undefined;
+  readonly clinicalDomain: string | undefined;
+  readonly evalsRun: string | undefined;
+  readonly datasetId: string | undefined;
+  readonly anonymization: PhiAnonymizationMethod | undefined;
+  readonly phiExportEntityDetails: boolean;
+  readonly llmFallback: Readonly<{
+    provider: 'openai' | 'anthropic' | undefined;
+    model: string | undefined;
+    apiKey: string | undefined;
+    onError: 'allow' | 'block';
+  }>;
+  readonly policiesEndpoint: string | undefined;
+  readonly disableExternalTracing: boolean;
+  readonly useRemotePolicies: boolean;
+  readonly batchDelayMs: number;
+
   readonly guardrails: Readonly<{
     fastRulesEnabled: boolean;
     augmentationEnabled: boolean;
@@ -62,7 +118,7 @@ export interface PolicyMatch {
   readonly description?: string;
   readonly policyName?: string;
   readonly category?: string;
-  readonly direction?: 'input' | 'output';
+  readonly direction?: 'inbound' | 'outbound';
   readonly position?: { start: number; end: number };
   readonly timestamp?: number;
 }
@@ -75,7 +131,7 @@ export interface GuardrailResult {
   readonly transformedInput?: string;
   readonly evaluationDuration?: number;
   readonly triggeredPolicies?: readonly string[];
-  readonly direction?: 'input' | 'output';
+  readonly direction?: 'inbound' | 'outbound';
 }
 
 export interface GuardrailOptions {
@@ -94,10 +150,14 @@ export interface UserMessageOptions {
   userId: string;
   conversationId: string;
   messageId: string;
+  /** Framework label propagated onto every child span (e.g. "langchain"). */
+  framework?: string;
 }
 
 export interface ToolOptions {
   fhirResourceType?: string;
+  /** Alias for `fhirResourceType`. Matches Python `@tool(fhir="Patient")`. */
+  fhir?: string;
 }
 
 // ---------------------------------------------------------------------------

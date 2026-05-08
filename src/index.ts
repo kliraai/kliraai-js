@@ -15,6 +15,8 @@ import {
   SimpleLogger,
 } from './config/index.js';
 import { initPipeline, shutdownPipeline, resetPipeline } from './observability/pipeline.js';
+import { autoPatchInstalledLLMs } from './adapters/auto-patch.js';
+import { GuardrailsEngine } from './guardrails/engine.js';
 
 // ---------------------------------------------------------------------------
 // Klira — static class (renamed from KliraAI)
@@ -58,6 +60,41 @@ export class Klira {
         logger.debug('OTel pipeline initialized');
       }
 
+      // Best-effort auto-patch installed LLM SDKs (Python parity).
+      await autoPatchInstalledLLMs();
+
+      // PROD-764 — wire policy-loading config (and, if requested, the
+      // LLM fallback evaluator) onto the GuardrailsEngine singleton.
+      // Always seed the engine with config from `Klira.init` so that
+      // the lazy first-`withGuardrails` construction picks up
+      // `policiesEndpoint` / `useRemotePolicies` / `policiesPath`.
+      // Without this, those config knobs were silently dropped.
+      const engine = GuardrailsEngine.getInstance({
+        fastRulesEnabled: config.guardrails.fastRulesEnabled,
+        augmentationEnabled: config.guardrails.augmentationEnabled,
+        llmFallbackEnabled:
+          config.guardrails.llmFallbackEnabled || Boolean(config.llmFallback.provider),
+        failureMode: config.guardrails.failureMode,
+        policyPath: config.policiesPath,
+        policiesEndpoint: config.policiesEndpoint,
+        useRemotePolicies: config.useRemotePolicies,
+        policyApiEndpoint: config.policyApiEndpoint,
+        apiKey: config.apiKey,
+      });
+
+      if (config.llmFallback.provider) {
+        // `getInstance(config)` ignored the config arg above because the
+        // singleton may already exist (init → shutdown → init, or tests).
+        // Configure the fallback service explicitly and flip the flag.
+        engine['llmFallback'].configureBuiltIn({
+          provider: config.llmFallback.provider,
+          model: config.llmFallback.model,
+          apiKey: config.llmFallback.apiKey,
+          onError: config.llmFallback.onError,
+        });
+        engine.setLlmFallbackEnabled(true);
+      }
+
       Klira._initialized = true;
       logger.info('Klira SDK v2 initialized');
 
@@ -93,6 +130,7 @@ export class Klira {
     Klira._config = null;
     resetGlobalConfig();
     resetPipeline();
+    GuardrailsEngine.reset();
   }
 }
 
@@ -147,8 +185,25 @@ export {
 // Re-export observability
 export { getTracer } from './observability/pipeline.js';
 
+// `getProviderForTesting` is intentionally NOT re-exported from the
+// package root — it's available via the `klira/testing` subpath, which
+// signals to consumers that it's an unstable testing-only escape hatch.
+
 // Re-export wrappers
 export { workflow, agent, task, tool, userMessage } from './wrappers/index.js';
+export { withGuardrails } from './wrappers/guardrails.js';
+
+// Re-export healthcare helpers (PROD-764 — needed by parity-harness JS port).
+export {
+  setPatientContext,
+  setClinicalContext,
+  setInteractionModality,
+  logClinicalDecision,
+  logEscalation,
+  logHandoff,
+  logSafetyCheck,
+  logRAGRetrieval,
+} from './healthcare/index.js';
 
 // Default export
 export default Klira;

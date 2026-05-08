@@ -7,9 +7,11 @@
 
 import {
   withLLMSpan,
-  augmentMessages,
 } from '../base-llm.js';
 import type { LLMCallResult } from '../../types/index.js';
+import { isPatched, markPatched } from '../sentinel.js';
+import { getAndClearGuidelines } from '../../guardrails/guideline-context.js';
+import { buildAugmentedMessages } from '../../guardrails/augmentation.js';
 
 const PROVIDER = 'ollama';
 
@@ -32,14 +34,17 @@ export function createOllamaAdapter<T extends { chat: (...args: any[]) => any }>
   client: T,
   options?: { guidelines?: readonly string[] },
 ): T {
+  if (isPatched(client as object)) return client;
   const originalChat = client.chat.bind(client);
 
   const instrumentedChat = async (params: any, ...rest: any[]) => {
     const model = params.model ?? 'unknown';
     let messages = params.messages ?? [];
 
-    if (options?.guidelines && options.guidelines.length > 0) {
-      messages = augmentMessages(messages, options.guidelines);
+    const dynamic = getAndClearGuidelines();
+    const guidelines = dynamic ?? options?.guidelines ?? [];
+    if (guidelines.length > 0) {
+      messages = buildAugmentedMessages(messages, guidelines);
     }
 
     const finalParams = { ...params, messages };
@@ -58,7 +63,7 @@ export function createOllamaAdapter<T extends { chat: (...args: any[]) => any }>
     );
   };
 
-  return new Proxy(client, {
+  const wrapped = new Proxy(client, {
     get(target, prop) {
       if (prop === 'chat') {
         return instrumentedChat;
@@ -66,4 +71,7 @@ export function createOllamaAdapter<T extends { chat: (...args: any[]) => any }>
       return (target as any)[prop];
     },
   });
+
+  markPatched(wrapped as object);
+  return wrapped;
 }

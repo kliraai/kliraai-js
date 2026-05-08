@@ -7,9 +7,11 @@
 
 import {
   withLLMSpan,
-  augmentMessages,
 } from '../base-llm.js';
 import type { LLMCallResult } from '../../types/index.js';
+import { isPatched, markPatched } from '../sentinel.js';
+import { getAndClearGuidelines } from '../../guardrails/guideline-context.js';
+import { buildAugmentedMessages } from '../../guardrails/augmentation.js';
 
 const PROVIDER = 'litellm';
 
@@ -31,14 +33,17 @@ export function createLiteLLMAdapter<T extends { completion: (...args: any[]) =>
   client: T,
   options?: { guidelines?: readonly string[] },
 ): T {
+  if (isPatched(client as object)) return client;
   const originalCompletion = client.completion.bind(client);
 
   const instrumentedCompletion = async (params: any, ...rest: any[]) => {
     const model = params.model ?? 'unknown';
     let messages = params.messages ?? [];
 
-    if (options?.guidelines && options.guidelines.length > 0) {
-      messages = augmentMessages(messages, options.guidelines);
+    const dynamic = getAndClearGuidelines();
+    const guidelines = dynamic ?? options?.guidelines ?? [];
+    if (guidelines.length > 0) {
+      messages = buildAugmentedMessages(messages, guidelines);
     }
 
     const finalParams = { ...params, messages };
@@ -59,7 +64,7 @@ export function createLiteLLMAdapter<T extends { completion: (...args: any[]) =>
     );
   };
 
-  return new Proxy(client, {
+  const wrapped = new Proxy(client, {
     get(target, prop) {
       if (prop === 'completion') {
         return instrumentedCompletion;
@@ -67,4 +72,7 @@ export function createLiteLLMAdapter<T extends { completion: (...args: any[]) =>
       return (target as any)[prop];
     },
   });
+
+  markPatched(wrapped as object);
+  return wrapped;
 }

@@ -241,7 +241,7 @@ describe('PhiAwareExporter', () => {
     expect(exported[0].attributes['klira.input']).toBe('SSN: 123-45-6789');
   });
 
-  it('sets phi.detected=false for clean spans', () => {
+  it('omits klira.phi.detected on clean spans (Python parity)', () => {
     const exported: any[] = [];
     const mockDelegate = {
       export: (spans: any[], cb: any) => {
@@ -260,7 +260,8 @@ describe('PhiAwareExporter', () => {
     };
 
     phiExporter.export([mockSpan as any], () => {});
-    expect(exported[0].attributes['klira.phi.detected']).toBe(false);
+    // Python only sets klira.phi.detected when PHI was actually detected.
+    expect('klira.phi.detected' in exported[0].attributes).toBe(false);
   });
 });
 
@@ -326,16 +327,22 @@ describe('Clinical logging', () => {
 
   it('logClinicalDecision creates span', () => {
     logClinicalDecision({
-      decisionType: 'triage',
-      rationale: 'Patient symptoms indicate urgent care needed',
+      decision: 'triage',
+      reasoning: 'Patient symptoms indicate urgent care needed',
       confidence: 0.95,
+      patientId: 'P-12345',
+      guidelinesUsed: 3,
     });
 
     const spans = exporter.getFinishedSpans();
     const span = spans.find((s) => s.name === 'klira.clinical.decision');
     expect(span).toBeDefined();
-    expect(span!.attributes['klira.clinical.decision_type']).toBe('triage');
+    expect(span!.attributes['klira.entity_name']).toBe('clinical_decision');
+    expect(span!.attributes['klira.clinical.decision']).toBe('triage');
+    expect(span!.attributes['klira.clinical.reasoning']).toBe('Patient symptoms indicate urgent care needed');
     expect(span!.attributes['klira.clinical.confidence']).toBe(0.95);
+    expect(span!.attributes['klira.clinical.patient_id']).toBe('P-12345');
+    expect(span!.attributes['klira.clinical.guidelines_used']).toBe(3);
   });
 
   it('logEscalation creates span', () => {
@@ -375,19 +382,26 @@ describe('Clinical logging', () => {
     const spans = exporter.getFinishedSpans();
     const span = spans.find((s) => s.name === 'klira.clinical.safety_check');
     expect(span).toBeDefined();
-    expect(span!.attributes['klira.clinical.safety_check_passed']).toBe(true);
+    expect(span!.attributes['klira.clinical.check_type']).toBe('medication-interaction');
+    expect(span!.attributes['klira.clinical.check_passed']).toBe(true);
+    expect(span!.attributes['klira.clinical.check_details']).toBe('No interactions found');
   });
 
-  it('logRAGRetrieval creates span', () => {
+  it('logRAGRetrieval creates klira.clinical.rag_retrieval span', () => {
     logRAGRetrieval({
       source: 'medical-guidelines',
       query: 'hypertension treatment',
       resultCount: 5,
+      indexName: 'pubmed_embeddings',
     });
 
     const spans = exporter.getFinishedSpans();
-    const span = spans.find((s) => s.name === 'klira.rag.retrieval');
+    const span = spans.find((s) => s.name === 'klira.clinical.rag_retrieval');
     expect(span).toBeDefined();
-    expect(span!.attributes['klira.rag.result_count']).toBe(5);
+    expect(span!.attributes['klira.entity_name']).toBe('rag_retrieval');
+    expect(span!.attributes['klira.clinical.rag_source']).toBe('medical-guidelines');
+    expect(span!.attributes['klira.clinical.rag_query']).toBe('hypertension treatment');
+    expect(span!.attributes['klira.clinical.rag_result_count']).toBe(5);
+    expect(span!.attributes['klira.clinical.index_name']).toBe('pubmed_embeddings');
   });
 });

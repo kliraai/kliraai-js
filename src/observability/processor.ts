@@ -15,7 +15,7 @@ export interface KliraProcessorOptions {
 const DEFAULTS: Required<KliraProcessorOptions> = {
   maxQueueSize: 2048,
   maxExportBatchSize: 512,
-  scheduledDelayMillis: 5000,
+  scheduledDelayMillis: 500,
   exportTimeoutMillis: 30000,
 };
 

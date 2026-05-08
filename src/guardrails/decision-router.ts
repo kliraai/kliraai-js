@@ -35,7 +35,7 @@ export function routeDecision(
     guidelines: guidelines.length > 0 ? guidelines : undefined,
     evaluationDuration,
     triggeredPolicies,
-    direction: direction === 'inbound' ? 'input' : 'output',
+    direction,
   };
 
   return { result, decision };

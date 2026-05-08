@@ -7,9 +7,11 @@
 
 import {
   withLLMSpan,
-  augmentMessages,
 } from '../base-llm.js';
 import type { LLMCallResult } from '../../types/index.js';
+import { isPatched, markPatched } from '../sentinel.js';
+import { getAndClearGuidelines } from '../../guardrails/guideline-context.js';
+import { buildAugmentedSystemKwarg } from '../../guardrails/augmentation.js';
 
 const PROVIDER = 'anthropic';
 
@@ -33,17 +35,22 @@ export function createAnthropicAdapter<T extends { messages: { create: (...args:
   client: T,
   options?: { guidelines?: readonly string[] },
 ): T {
+  if (isPatched(client as object)) return client;
   const originalCreate = client.messages.create.bind(client.messages);
 
   const instrumentedCreate = async (params: any, ...rest: any[]) => {
     const model = params.model ?? 'unknown';
-    let messages = params.messages ?? [];
+    const messages = params.messages ?? [];
 
-    if (options?.guidelines && options.guidelines.length > 0) {
-      messages = augmentMessages(messages, options.guidelines);
+    // Anthropic injects guidelines into the native `system` kwarg, not
+    // a synthetic system message — Python parity.
+    const dynamic = getAndClearGuidelines();
+    const guidelines = dynamic ?? options?.guidelines ?? [];
+    const finalParams: any = { ...params };
+    if (guidelines.length > 0) {
+      finalParams.system = buildAugmentedSystemKwarg(params.system, guidelines);
     }
-
-    const finalParams = { ...params, messages };
+    finalParams.messages = messages;
 
     // Streaming
     if (params.stream) {
@@ -72,7 +79,7 @@ export function createAnthropicAdapter<T extends { messages: { create: (...args:
     );
   };
 
-  return new Proxy(client, {
+  const wrapped = new Proxy(client, {
     get(target, prop) {
       if (prop === 'messages') {
         return new Proxy(target.messages, {
@@ -87,4 +94,7 @@ export function createAnthropicAdapter<T extends { messages: { create: (...args:
       return (target as any)[prop];
     },
   });
+
+  markPatched(wrapped as object);
+  return wrapped;
 }

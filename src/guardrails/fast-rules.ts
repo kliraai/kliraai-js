@@ -93,7 +93,7 @@ export class FastRulesEngine {
             blocked: policy.rules[0]?.action === 'block' && confidence >= 0.85,
             matched: best.matchedText,
             metadata: { similarity: best.similarity, confidence, matchType: 'fuzzy' },
-            direction: direction === 'inbound' ? 'input' : 'output',
+            direction,
           };
           matches.push(m);
           if (m.blocked) blocked = true;
@@ -111,7 +111,7 @@ export class FastRulesEngine {
       blocked: policy.rules[0]?.action === 'block',
       matched: matchedText,
       policyName: policy.name,
-      direction: policy.direction === 'inbound' ? 'input' : 'output',
+      direction: policy.direction === 'both' ? undefined : policy.direction,
       position: { start: position, end: position + matchedText.length },
     };
   }

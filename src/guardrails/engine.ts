@@ -26,6 +26,16 @@ import { scheduleAudit } from './compliance-audit.js';
 import { LLMFallbackService, type LLMService } from './llm-fallback.js';
 import { loadDefaultPolicies, loadPoliciesFromYAML, loadPoliciesFromAPI } from './policy-loader.js';
 
+/** Map the past-tense internal decision to Python's action-verb wire value. */
+function decisionToAction(decision: GuardrailDecision): string {
+  switch (decision) {
+    case 'allowed': return 'allow';
+    case 'blocked': return 'block';
+    case 'augmented': return 'augment';
+    case 'llm_fallback': return 'llm_fallback';
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
@@ -37,8 +47,38 @@ export interface GuardrailsEngineConfig {
   readonly llmService?: LLMService;
   readonly failureMode?: 'open' | 'closed';
   readonly policyPath?: string;
+
+  /**
+   * Remote endpoint for fetching policies. Accepts either a base URL
+   * (e.g. `https://dev.api.getklira.com`) or a full URL with the
+   * `/v1/policies` path (e.g. `https://dev.api.getklira.com/v1/policies`).
+   * When the path is missing, `/v1/policies` is appended at fetch time.
+   *
+   * Mirrors Python's `policies_endpoint`. Only used when `useRemotePolicies`
+   * is `true`.
+   */
+  readonly policiesEndpoint?: string;
+
+  /**
+   * When `true` and `policiesEndpoint` is set, fetch policies from the
+   * remote endpoint instead of YAML / defaults. When `false` (default),
+   * YAML at `policyPath` is preferred, falling back to bundled defaults.
+   *
+   * Mirrors Python's `use_remote_policies`.
+   */
+  readonly useRemotePolicies?: boolean;
+
+  /** @deprecated Use `policiesEndpoint` + `useRemotePolicies = true`. */
   readonly policyApiEndpoint?: string;
+
   readonly apiKey?: string;
+}
+
+/** Append `/v1/policies` if the URL doesn't already end with it. */
+function normalizePoliciesUrl(raw: string): string {
+  const stripped = raw.replace(/\/+$/, '');
+  if (stripped.endsWith('/v1/policies')) return stripped;
+  return `${stripped}/v1/policies`;
 }
 
 // ---------------------------------------------------------------------------
@@ -46,11 +86,39 @@ export interface GuardrailsEngineConfig {
 // ---------------------------------------------------------------------------
 
 export class GuardrailsEngine {
+  private static _instance: GuardrailsEngine | null = null;
+
+  /**
+   * Return a process-wide singleton, creating it on first call. Mirrors
+   * Python `GuardrailsEngine._instance`. `withGuardrails` and
+   * `Klira.init()` consume the singleton so a second call doesn't
+   * re-initialize policy state.
+   */
+  static getInstance(config?: GuardrailsEngineConfig): GuardrailsEngine {
+    if (!GuardrailsEngine._instance) {
+      GuardrailsEngine._instance = new GuardrailsEngine(config);
+    }
+    return GuardrailsEngine._instance;
+  }
+
+  static setInstance(engine: GuardrailsEngine): void {
+    GuardrailsEngine._instance = engine;
+  }
+
+  static reset(): void {
+    GuardrailsEngine._instance = null;
+  }
+
   private fastRules: FastRulesEngine;
   private augmentation: PolicyAugmentation;
   private llmFallback: LLMFallbackService;
   private config: GuardrailsEngineConfig;
   private initialized = false;
+  // Promise-chain serializes concurrent evaluate() calls so two callers
+  // don't race the lifecycle (Python parity, PROD-482). Replacing this
+  // chain on each call yields one waiter per call; the chain head is the
+  // active evaluation.
+  private chain: Promise<unknown> = Promise.resolve();
 
   constructor(config: GuardrailsEngineConfig = {}) {
     this.config = {
@@ -74,32 +142,71 @@ export class GuardrailsEngine {
   // Initialization
   // -------------------------------------------------------------------------
 
+  // PROD-764 — keep a single in-flight initialization promise so two
+  // concurrent callers don't both load policies. The first caller pins
+  // `_initializing`; everyone else awaits the same promise.
+  private _initializing: Promise<void> | null = null;
+
   async initialize(): Promise<void> {
     if (this.initialized) return;
+    if (this._initializing) return this._initializing;
 
-    let policies: PolicyDefinition[] = [];
+    this._initializing = (async () => {
+      try {
+        let policies: PolicyDefinition[] = [];
 
-    if (this.config.policyApiEndpoint) {
-      policies = await loadPoliciesFromAPI(
-        this.config.policyApiEndpoint,
-        this.config.apiKey,
-      );
-    }
+        // Remote loading (Python parity): only when `useRemotePolicies`
+        // is set AND a target endpoint is configured. The endpoint can
+        // come from the modern `policiesEndpoint` field or the legacy
+        // `policyApiEndpoint` (kept for back-compat). Both accept either
+        // a base URL or the full `/v1/policies` URL.
+        const remoteUrl = this.config.policiesEndpoint ?? this.config.policyApiEndpoint;
+        if (this.config.useRemotePolicies && remoteUrl) {
+          policies = await loadPoliciesFromAPI(
+            normalizePoliciesUrl(remoteUrl),
+            this.config.apiKey,
+          );
+        } else if (!this.config.useRemotePolicies && this.config.policyApiEndpoint) {
+          // Legacy path: `policyApiEndpoint` alone (without
+          // `useRemotePolicies`) used to trigger the API fetch directly.
+          // Preserved so existing consumers don't break.
+          policies = await loadPoliciesFromAPI(
+            normalizePoliciesUrl(this.config.policyApiEndpoint),
+            this.config.apiKey,
+          );
+        }
 
-    // Fall back to YAML / default if API returned nothing
-    if (policies.length === 0) {
-      policies = this.config.policyPath
-        ? loadPoliciesFromYAML(this.config.policyPath)
-        : loadDefaultPolicies();
-    }
+        // Fall back to YAML / default if remote returned nothing or
+        // wasn't configured.
+        if (policies.length === 0) {
+          policies = this.config.policyPath
+            ? loadPoliciesFromYAML(this.config.policyPath)
+            : loadDefaultPolicies();
+        }
 
-    this.fastRules.initialize(policies);
-    this.augmentation.initialize(policies);
-    this.initialized = true;
+        this.fastRules.initialize(policies);
+        this.augmentation.initialize(policies);
+        this.initialized = true;
+      } finally {
+        this._initializing = null;
+      }
+    })();
+
+    return this._initializing;
   }
 
   isInitialized(): boolean {
     return this.initialized;
+  }
+
+  /**
+   * Flip the `llmFallbackEnabled` config flag at runtime. `getInstance(config)`
+   * ignores the config argument when a singleton already exists, so this is
+   * the only path to enable LLM fallback after the engine has been constructed
+   * (used by `Klira.init` to wire the fallback after the singleton exists).
+   */
+  setLlmFallbackEnabled(enabled: boolean): void {
+    this.config = { ...this.config, llmFallbackEnabled: enabled };
   }
 
   // -------------------------------------------------------------------------
@@ -133,21 +240,28 @@ export class GuardrailsEngine {
       await this.initialize();
     }
 
-    const tracer = getTracer();
-    const spanName =
-      direction === 'inbound'
-        ? 'klira.guardrails.input'
-        : 'klira.guardrails.output';
+    // Serialize through the per-engine chain so two callers can't tear
+    // lifecycle state. Each new call attaches behind the current head.
+    const next = this.chain.then(async () => {
+      const tracer = getTracer();
+      const spanName =
+        direction === 'inbound'
+          ? 'klira.guardrails.input'
+          : 'klira.guardrails.output';
 
-    return tracer.startActiveSpan(spanName, async (span: Span) => {
-      try {
-        return await this.runLifecycle(content, direction, span);
-      } catch (error) {
-        span.setStatus({ code: SpanStatusCode.ERROR, message: String(error) });
-        span.end();
-        return this.handleFailure(error, direction);
-      }
+      return tracer.startActiveSpan(spanName, async (span: Span) => {
+        try {
+          return await this.runLifecycle(content, direction, span);
+        } catch (error) {
+          span.setStatus({ code: SpanStatusCode.ERROR, message: String(error) });
+          span.end();
+          return this.handleFailure(error, direction);
+        }
+      });
     });
+    // Swallow this run's error on the chain so it doesn't poison waiters.
+    this.chain = next.catch(() => undefined);
+    return next;
   }
 
   private async runLifecycle(
@@ -159,32 +273,23 @@ export class GuardrailsEngine {
     const startTime = Date.now();
     const parentCtx = context.active();
 
-    // 1. IDLE → EVALUATING
+    // PROD-764 — Python parity:
+    //   - entity_name is direction-shaped ("input" / "output"), not "guardrails"
+    //   - klira.guardrails.policy_count lives on the parent span
+    //   - klira.guardrails.decision uses action verbs ("allow" / "block" / "augment" / "llm_fallback")
+    //   - no klira.guardrails.fast_rules / klira.guardrails.route_decision
+    //     child spans (Python sets the same data as attributes on the parent)
+    //   - no klira.guardrails.augmentation_applied / match_count /
+    //     evaluation_duration_ms on the parent span
     lifecycle.transitionTo(GuardrailState.EVALUATING);
-    const directionAttr = direction === 'inbound' ? 'input' : 'output';
     parentSpan.setAttribute('klira.entity_type', 'guardrails');
-    parentSpan.setAttribute('klira.guardrails.direction', directionAttr);
+    parentSpan.setAttribute('klira.entity_name', direction === 'inbound' ? 'input' : 'output');
+    parentSpan.setAttribute('klira.compliance.direction', direction);
+    parentSpan.setAttribute('klira.guardrails.policy_count', this.fastRules.getPolicyCount());
 
-    // Run fast rules inside a child span
-    const tracer = getTracer();
-    const fastRulesResult = tracer.startActiveSpan(
-      'klira.guardrails.fast_rules',
-      {
-        attributes: {
-          'klira.entity_type': 'guardrails',
-          'klira.guardrails.policy_count': this.fastRules.getPolicyCount(),
-        },
-      },
-      (fastSpan: Span) => {
-        const result = this.config.fastRulesEnabled
-          ? this.fastRules.evaluate(content, direction)
-          : { matches: [], blocked: false, allowed: true };
-        fastSpan.setAttribute('klira.guardrails.match_count', result.matches.length);
-        fastSpan.setStatus({ code: SpanStatusCode.OK });
-        fastSpan.end();
-        return result;
-      },
-    );
+    const fastRulesResult = this.config.fastRulesEnabled
+      ? this.fastRules.evaluate(content, direction)
+      : { matches: [], blocked: false, allowed: true };
 
     // LLM fallback when fast rules produce zero matches
     let llmFallbackUsed = false;
@@ -204,7 +309,6 @@ export class GuardrailsEngine {
       }
     }
 
-    // Generate augmentation guidelines
     const guidelines = this.config.augmentationEnabled && !fastRulesResult.blocked
       ? this.augmentation.generateGuidelines(
           fastRulesResult.matches,
@@ -212,42 +316,20 @@ export class GuardrailsEngine {
         )
       : [];
 
-    // 2. EVALUATING → DECIDED
     lifecycle.transitionTo(GuardrailState.DECIDED);
     const duration = Date.now() - startTime;
 
-    // Route decision inside child span
-    const { result, decision } = tracer.startActiveSpan(
-      'klira.guardrails.route_decision',
-      {
-        attributes: {
-          'klira.entity_type': 'guardrails',
-        },
-      },
-      (routeSpan: Span) => {
-        const effectiveDecision = llmFallbackUsed ? 'llm_fallback' as GuardrailDecision : undefined;
-        const routed = routeDecision(fastRulesResult, guidelines, direction, duration);
-        const finalDecision = effectiveDecision ?? routed.decision;
-        routeSpan.setAttribute('klira.guardrails.decision', finalDecision);
-        routeSpan.setAttribute('klira.guardrails.allowed', routed.result.allowed);
-        routeSpan.setStatus({ code: SpanStatusCode.OK });
-        routeSpan.end();
-        return { result: routed.result, decision: finalDecision };
-      },
-    );
+    const effectiveDecision = llmFallbackUsed ? 'llm_fallback' as GuardrailDecision : undefined;
+    const routed = routeDecision(fastRulesResult, guidelines, direction, duration);
+    const decision: GuardrailDecision = effectiveDecision ?? routed.decision;
+    const result = routed.result;
 
-    // Record decision on parent span
-    parentSpan.setAttribute('klira.guardrails.decision', decision);
+    parentSpan.setAttribute('klira.guardrails.decision', decisionToAction(decision));
     parentSpan.setAttribute('klira.guardrails.allowed', result.allowed);
-    parentSpan.setAttribute('klira.guardrails.match_count', result.matches.length);
-    parentSpan.setAttribute('klira.guardrails.augmentation_applied', decision === 'augmented');
-    parentSpan.setAttribute('klira.guardrails.evaluation_duration_ms', duration);
 
-    // 3. DECIDED → AUDIT_SCHEDULED (async, never blocks)
     lifecycle.transitionTo(GuardrailState.AUDIT_SCHEDULED);
     scheduleAudit(decision, result, direction, parentCtx);
 
-    // 4. AUDIT_SCHEDULED → DONE
     lifecycle.transitionTo(GuardrailState.DONE);
 
     parentSpan.setStatus({ code: SpanStatusCode.OK });
@@ -277,7 +359,7 @@ export class GuardrailsEngine {
               blocked: true,
             },
           ],
-      direction: direction === 'inbound' ? 'input' : 'output',
+      direction,
     };
   }
 

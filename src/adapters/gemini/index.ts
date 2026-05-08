@@ -9,6 +9,9 @@ import {
   withLLMSpan,
 } from '../base-llm.js';
 import type { LLMCallResult } from '../../types/index.js';
+import { isPatched, markPatched } from '../sentinel.js';
+import { getAndClearGuidelines } from '../../guardrails/guideline-context.js';
+import { buildAugmentedContents } from '../../guardrails/augmentation.js';
 
 const PROVIDER = 'gemini';
 
@@ -29,6 +32,7 @@ export function createGeminiAdapter<T extends { generateContent: (...args: any[]
   model: T,
   options?: { modelName?: string },
 ): T {
+  if (isPatched(model as object)) return model;
   const originalGenerate = model.generateContent.bind(model);
   const modelName = options?.modelName ?? 'gemini-pro';
 
@@ -41,10 +45,18 @@ export function createGeminiAdapter<T extends { generateContent: (...args: any[]
           content: c.parts?.map((p: any) => p.text).join('') ?? '',
         }));
 
+    // Inject guidelines into Gemini's `contents` field shape.
+    const guidelines = getAndClearGuidelines();
+    let finalArgs = args;
+    if (guidelines && guidelines.length > 0 && typeof request !== 'string') {
+      const augmented = buildAugmentedContents(request?.contents, guidelines);
+      finalArgs = [{ ...request, contents: augmented }, ...args.slice(1)];
+    }
+
     return withLLMSpan(
       PROVIDER,
       { model: modelName, messages },
-      async () => originalGenerate(...args),
+      async () => originalGenerate(...finalArgs),
       (response: any): LLMCallResult => {
         const text = response?.response?.text?.() ?? '';
         const usage = response?.response?.usageMetadata;
@@ -61,7 +73,7 @@ export function createGeminiAdapter<T extends { generateContent: (...args: any[]
     );
   };
 
-  return new Proxy(model, {
+  const wrapped = new Proxy(model, {
     get(target, prop) {
       if (prop === 'generateContent') {
         return instrumentedGenerate;
@@ -69,4 +81,7 @@ export function createGeminiAdapter<T extends { generateContent: (...args: any[]
       return (target as any)[prop];
     },
   });
+
+  markPatched(wrapped as object);
+  return wrapped;
 }

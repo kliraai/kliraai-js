@@ -129,13 +129,15 @@ export const ATTR_GUARDRAILS_DECISION_LAYER = attr('klira.compliance.decision.la
 export const ATTR_GUARDRAILS_AUGMENTATION_APPLIED = attr('klira.guardrails.augmentation_applied', AttributeType.BOOL, 'Whether prompt augmentation was applied');
 export const ATTR_GUARDRAILS_GUIDELINES_COUNT = attr('klira.guardrails.guidelines_count', AttributeType.INT, 'Number of guidelines injected');
 export const ATTR_GUARDRAILS_POLICY_COUNT = attr('klira.guardrails.policy_count', AttributeType.INT, 'Number of policies evaluated');
-export const ATTR_GUARDRAILS_LATENCY_MS = attr('klira.guardrails.latency_ms', AttributeType.FLOAT, 'Guardrails processing latency in ms');
 export const ATTR_GUARDRAILS_POLICIES_INJECTED = attr('klira.llm.guardrails.policies_injected', AttributeType.INT, 'Number of policies injected');
 export const ATTR_GUARDRAILS_AUGMENTED = attr('klira.llm.guardrails.augmented', AttributeType.BOOL, 'Whether LLM call was augmented');
 
 // --- Guardrails evaluate-level attributes ---
-export const ATTR_GUARDRAILS_EVALUATE_DIRECTION = attr('klira.guardrails.direction', AttributeType.STRING, 'Guardrails evaluation direction', ['input', 'output']);
-export const ATTR_GUARDRAILS_EVALUATE_DECISION = attr('klira.guardrails.decision', AttributeType.STRING, 'Guardrails evaluation decision action', ['allowed', 'blocked', 'augmented', 'llm_fallback']);
+// PROD-764 — wire value is the action verb (allow / block / augment / llm_fallback),
+// matching Python's `klira.guardrails.decision` and the action semantics of
+// `klira.compliance.decision.action`. The compliance child span's *name* still
+// carries the past-tense word (klira.compliance.allowed etc.).
+export const ATTR_GUARDRAILS_EVALUATE_DECISION = attr('klira.guardrails.decision', AttributeType.STRING, 'Guardrails evaluation decision action', ['allow', 'block', 'augment', 'llm_fallback']);
 export const ATTR_GUARDRAILS_EVALUATE_ALLOWED = attr('klira.guardrails.allowed', AttributeType.BOOL, 'Whether guardrails evaluation allowed the content');
 
 // --- Compliance attributes ---
@@ -253,8 +255,8 @@ export const SPAN_GUARDRAILS_INPUT: SpanDefinition = {
   parentConstraints: [...CHILD_OF_ANY_KLIRA],
   requiredAttributes: [ATTR_ENTITY_TYPE, ATTR_GUARDRAILS_DIRECTION],
   optionalAttributes: [
-    ATTR_ENTITY_NAME, ATTR_GUARDRAILS_LATENCY_MS, ATTR_GUARDRAILS_POLICY_COUNT,
-    ATTR_GUARDRAILS_EVALUATE_DECISION, ATTR_GUARDRAILS_EVALUATE_ALLOWED, ATTR_DURATION_MS,
+    ATTR_ENTITY_NAME, ATTR_GUARDRAILS_POLICY_COUNT,
+    ATTR_GUARDRAILS_EVALUATE_DECISION, ATTR_GUARDRAILS_EVALUATE_ALLOWED,
   ],
 };
 
@@ -264,8 +266,8 @@ export const SPAN_GUARDRAILS_OUTPUT: SpanDefinition = {
   parentConstraints: [...CHILD_OF_GUARDRAILS, ...CHILD_OF_ANY_KLIRA],
   requiredAttributes: [ATTR_ENTITY_TYPE, ATTR_GUARDRAILS_DIRECTION],
   optionalAttributes: [
-    ATTR_ENTITY_NAME, ATTR_GUARDRAILS_LATENCY_MS, ATTR_GUARDRAILS_POLICY_COUNT,
-    ATTR_GUARDRAILS_EVALUATE_DECISION, ATTR_GUARDRAILS_EVALUATE_ALLOWED, ATTR_DURATION_MS,
+    ATTR_ENTITY_NAME, ATTR_GUARDRAILS_POLICY_COUNT,
+    ATTR_GUARDRAILS_EVALUATE_DECISION, ATTR_GUARDRAILS_EVALUATE_ALLOWED,
   ],
 };
 

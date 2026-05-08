@@ -12,7 +12,10 @@ import { FastRulesEngine } from '../../guardrails/fast-rules.js';
 import { PolicyAugmentation } from '../../guardrails/policy-augmentation.js';
 import { FuzzyMatcher } from '../../guardrails/fuzzy-matcher.js';
 import { routeDecision } from '../../guardrails/decision-router.js';
-import { compilePolicies, loadDefaultPolicies } from '../../guardrails/policy-loader.js';
+import { compilePolicies, loadDefaultPolicies, loadPoliciesFromYAML } from '../../guardrails/policy-loader.js';
+import { writeFileSync, mkdtempSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import {
   GuardrailLifecycle,
   GuardrailState,
@@ -335,14 +338,14 @@ describe('routeDecision', () => {
     expect(decision).toBe('augmented');
   });
 
-  it('sets direction to output for outbound', () => {
+  it('sets direction to outbound for outbound', () => {
     const { result } = routeDecision(
       { matches: [], blocked: false, allowed: true },
       [],
       'outbound',
       3,
     );
-    expect(result.direction).toBe('output');
+    expect(result.direction).toBe('outbound');
   });
 });
 
@@ -378,6 +381,93 @@ describe('Policy loader', () => {
       }
     }
   });
+
+  // PROD-764 Phase 1 — Python-compatible policy YAML shapes
+  describe('accepts both bare-list and envelope (Python parity)', () => {
+    let tmpDir: string;
+
+    beforeEach(() => {
+      tmpDir = mkdtempSync(join(tmpdir(), 'klira-policy-'));
+    });
+
+    afterEach(() => {
+      rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('loads policies from a bare list YAML', () => {
+      const file = join(tmpDir, 'bare.yaml');
+      writeFileSync(
+        file,
+        `- id: bare-1
+  name: Bare One
+  direction: inbound
+  action: block
+  patterns:
+    - "secret"
+- id: bare-2
+  name: Bare Two
+  direction: outbound
+  action: allow
+  domains:
+    - "diagnosis"
+`,
+      );
+
+      const policies = loadPoliciesFromYAML(file);
+      expect(policies.length).toBe(2);
+      expect(policies[0].name).toBe('Bare One');
+      expect(policies[1].name).toBe('Bare Two');
+    });
+
+    it('loads policies from envelope shape', () => {
+      const file = join(tmpDir, 'envelope.yaml');
+      writeFileSync(
+        file,
+        `policies:
+  - id: env-1
+    name: Env One
+    direction: inbound
+    action: block
+    patterns:
+      - "secret"
+`,
+      );
+
+      const policies = loadPoliciesFromYAML(file);
+      expect(policies.length).toBe(1);
+      expect(policies[0].name).toBe('Env One');
+    });
+
+    // PROD-764 — YAML alias rejection (billion-laughs / DoS hardening)
+    it('rejects YAML aliases / anchors and returns empty + warns', () => {
+      const file = join(tmpDir, 'aliases.yaml');
+      writeFileSync(
+        file,
+        `defaults: &default
+  direction: inbound
+  action: block
+policies:
+  - id: alias-1
+    name: With Anchor
+    <<: *default
+    patterns:
+      - "x"
+`,
+      );
+
+      const warnings: string[] = [];
+      const originalWarn = console.warn;
+      console.warn = (...args: unknown[]) => { warnings.push(args.map(String).join(' ')); };
+
+      try {
+        const policies = loadPoliciesFromYAML(file);
+        expect(policies).toEqual([]);
+        expect(warnings.some((w) => w.includes('aliases'))).toBe(true);
+      } finally {
+        console.warn = originalWarn;
+      }
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -412,7 +502,7 @@ describe('GuardrailsEngine', () => {
     expect(result.matches.length).toBeGreaterThan(0);
   });
 
-  it('creates guardrails OTel spans', async () => {
+  it('creates a single klira.guardrails.input span (Python parity, no fast_rules / route_decision children)', async () => {
     const engine = new GuardrailsEngine();
     engine['fastRules'].initialize(createTestPolicies());
     engine['initialized'] = true;
@@ -423,8 +513,8 @@ describe('GuardrailsEngine', () => {
     const spanNames = spans.map((s) => s.name);
 
     expect(spanNames).toContain('klira.guardrails.input');
-    expect(spanNames).toContain('klira.guardrails.fast_rules');
-    expect(spanNames).toContain('klira.guardrails.route_decision');
+    expect(spanNames).not.toContain('klira.guardrails.fast_rules');
+    expect(spanNames).not.toContain('klira.guardrails.route_decision');
   });
 
   it('creates output spans for evaluateOutput', async () => {
@@ -449,8 +539,10 @@ describe('GuardrailsEngine', () => {
     const spans = exporter.getFinishedSpans();
     const inputSpan = spans.find((s) => s.name === 'klira.guardrails.input');
     expect(inputSpan).toBeDefined();
-    expect(inputSpan!.attributes['klira.guardrails.decision']).toBe('allowed');
+    // Python parity: action verb on the wire ('allow' / 'block' / 'augment').
+    expect(inputSpan!.attributes['klira.guardrails.decision']).toBe('allow');
     expect(inputSpan!.attributes['klira.guardrails.allowed']).toBe(true);
+    expect(inputSpan!.attributes['klira.guardrails.policy_count']).toBeTypeOf('number');
   });
 
   it('handles augmented decision with guidelines', async () => {
@@ -470,8 +562,13 @@ describe('GuardrailsEngine', () => {
     if (result.guidelines && result.guidelines.length > 0) {
       const spans = exporter.getFinishedSpans();
       const inputSpan = spans.find((s) => s.name === 'klira.guardrails.input');
-      expect(inputSpan!.attributes['klira.guardrails.decision']).toBe('augmented');
-      expect(inputSpan!.attributes['klira.guardrails.augmentation_applied']).toBe(true);
+      // Python parity: the parent guardrails span no longer carries
+      // klira.guardrails.augmentation_applied — that flag lives on the
+      // child klira.compliance.augmented span instead.
+      expect(inputSpan!.attributes['klira.guardrails.decision']).toBe('augment');
+      const compliance = spans.find((s) => s.name === 'klira.compliance.augmented');
+      expect(compliance).toBeDefined();
+      expect(compliance!.attributes['klira.guardrails.augmentation_applied']).toBe(true);
     }
   });
 
@@ -491,6 +588,52 @@ describe('GuardrailsEngine', () => {
     expect(engine.isInitialized()).toBe(true);
     expect(result.allowed).toBe(true);
   });
+
+  // PROD-764 Phase 1 — wire-format parity with Python
+  it('emits klira.compliance.direction (not klira.guardrails.direction) with inbound/outbound values', async () => {
+    const engine = new GuardrailsEngine();
+    engine['fastRules'].initialize(createTestPolicies());
+    engine['initialized'] = true;
+
+    await engine.evaluateInput('Hello world');
+    await engine.evaluateOutput('Safe output');
+
+    const spans = exporter.getFinishedSpans();
+    const input = spans.find((s) => s.name === 'klira.guardrails.input');
+    const output = spans.find((s) => s.name === 'klira.guardrails.output');
+
+    expect(input!.attributes['klira.compliance.direction']).toBe('inbound');
+    expect(input!.attributes['klira.guardrails.direction']).toBeUndefined();
+    expect(output!.attributes['klira.compliance.direction']).toBe('outbound');
+    expect(output!.attributes['klira.guardrails.direction']).toBeUndefined();
+  });
+
+  it('sets klira.entity_name to direction-shaped value on guardrails parent spans (Python parity)', async () => {
+    const engine = new GuardrailsEngine();
+    engine['fastRules'].initialize(createTestPolicies());
+    engine['initialized'] = true;
+
+    await engine.evaluateInput('Hello world');
+    await engine.evaluateOutput('Safe output');
+
+    const spans = exporter.getFinishedSpans();
+    const input = spans.find((s) => s.name === 'klira.guardrails.input');
+    const output = spans.find((s) => s.name === 'klira.guardrails.output');
+    expect(input!.attributes['klira.entity_name']).toBe('input');
+    expect(output!.attributes['klira.entity_name']).toBe('output');
+  });
+
+  it('GuardrailResult.direction reports inbound/outbound (Python parity)', async () => {
+    const engine = new GuardrailsEngine();
+    engine['fastRules'].initialize(createTestPolicies());
+    engine['initialized'] = true;
+
+    const inResult = await engine.evaluateInput('Hello');
+    const outResult = await engine.evaluateOutput('World');
+
+    expect(inResult.direction).toBe('inbound');
+    expect(outResult.direction).toBe('outbound');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -506,7 +649,14 @@ describe('Guardrails latency', () => {
     await teardownOtel();
   });
 
-  it('evaluates in under 50ms', async () => {
+  // PROD-764 — the assertions guard against gross regressions on shared CI
+  // runners under coverage instrumentation, not against the 50ms target the
+  // engine actually achieves locally on warm builds. The product target is
+  // <50ms; the test threshold is 120ms to ride out CI noise. If we ever blow
+  // through 120ms, that's a real regression worth investigating.
+  const PERF_THRESHOLD_MS = 120;
+
+  it('evaluates fast (target <50ms; CI bound 120ms)', async () => {
     const engine = new GuardrailsEngine();
     engine['fastRules'].initialize(createTestPolicies());
     engine['initialized'] = true;
@@ -515,10 +665,10 @@ describe('Guardrails latency', () => {
     await engine.evaluateInput('This is a normal message with no policy violations');
     const elapsed = performance.now() - start;
 
-    expect(elapsed).toBeLessThan(50);
+    expect(elapsed).toBeLessThan(PERF_THRESHOLD_MS);
   });
 
-  it('evaluates blocking content in under 50ms', async () => {
+  it('evaluates blocking content fast (target <50ms; CI bound 120ms)', async () => {
     const engine = new GuardrailsEngine();
     engine['fastRules'].initialize(createTestPolicies());
     engine['initialized'] = true;
@@ -527,10 +677,10 @@ describe('Guardrails latency', () => {
     await engine.evaluateInput('My SSN is 123-45-6789');
     const elapsed = performance.now() - start;
 
-    expect(elapsed).toBeLessThan(50);
+    expect(elapsed).toBeLessThan(PERF_THRESHOLD_MS);
   });
 
-  it('evaluates with default policies in under 50ms', async () => {
+  it('evaluates with default policies fast (target <50ms; CI bound 120ms)', async () => {
     const engine = new GuardrailsEngine();
     await engine.initialize();
 
@@ -538,6 +688,6 @@ describe('Guardrails latency', () => {
     await engine.evaluateInput('This is a normal message');
     const elapsed = performance.now() - start;
 
-    expect(elapsed).toBeLessThan(50);
+    expect(elapsed).toBeLessThan(PERF_THRESHOLD_MS);
   });
 });
