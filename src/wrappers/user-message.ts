@@ -29,16 +29,19 @@ export function userMessage<TArgs extends unknown[], TReturn>(
     });
     const ctx = markInTrace(baseCtx);
 
-    // Python parity: klira.user.message carries only the four core
-    // identifiers. Framework / clinical_domain / evals_run live on
-    // the workflow span (set there via setClinicalContext etc), not
-    // on the root.
+    // Python parity (verified against captured OTLP from healthcare_agent.py):
+    // klira.user.message carries the four core identifiers + `klira.evals.evals_run`
+    // when the SDK is in eval mode. Framework / clinical_domain stay on the
+    // workflow span (set via setClinicalContext etc), NOT on the root.
     const rootAttrs: Record<string, string> = {
       'klira.entity_type': 'user_message',
       'klira.user_id': options.userId,
       'klira.conversation_id': options.conversationId,
       'klira.message_id': options.messageId,
     };
+    if (config?.evalsRun) {
+      rootAttrs['klira.evals.evals_run'] = config.evalsRun;
+    }
 
     return otelContext.with(ctx, () =>
       tracer.startActiveSpan(

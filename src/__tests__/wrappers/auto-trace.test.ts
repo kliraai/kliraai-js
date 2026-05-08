@@ -100,14 +100,13 @@ describe('runtime attribute propagation', () => {
 describe('klira.user.message root-span shape (Python parity)', () => {
   afterEach(() => resetGlobalConfig());
 
-  // PROD-764 — Python's klira.user.message carries only the four core
-  // identifiers. Framework / clinical_domain / evals_run / dataset_id
-  // belong on workflow / tool spans (clinical_domain via setClinicalContext)
-  // or are exposed as resource attributes — never on the root.
-  it('does not stamp evals/clinical/framework on the root, even when configured', async () => {
+  // Verified against captured OTLP from `healthcare_agent.py`. The root
+  // span carries the four core identifiers and `klira.evals.evals_run`
+  // when in eval mode. Specifically NOT: entity_name, framework,
+  // dataset_id, clinical_domain.
+  it('omits framework / clinical_domain / dataset_id / entity_name on the root, even when configured', async () => {
     setGlobalConfig(createConfig({
       appName: 't',
-      evalsRun: 'run-7',
       datasetId: 'ds-3',
       clinicalDomain: 'clinical_notes',
       framework: 'pytest',
@@ -121,18 +120,40 @@ describe('klira.user.message root-span shape (Python parity)', () => {
 
     const root = exporter.getFinishedSpans().find((s) => s.name === 'klira.user.message');
     expect(root).toBeDefined();
-    expect(root!.attributes['klira.evals.evals_run']).toBeUndefined();
     expect(root!.attributes['klira.evals.dataset_id']).toBeUndefined();
     expect(root!.attributes['klira.healthcare.clinical_domain']).toBeUndefined();
     expect(root!.attributes['klira.framework']).toBeUndefined();
     expect(root!.attributes['klira.entity_name']).toBeUndefined();
-    // Only the four core identifiers
-    expect(Object.keys(root!.attributes).sort()).toEqual([
-      'klira.conversation_id',
-      'klira.entity_type',
-      'klira.message_id',
-      'klira.user_id',
-    ]);
+  });
+
+  it('stamps klira.evals.evals_run on the root when SDK is in eval mode (Python parity)', async () => {
+    setGlobalConfig(createConfig({
+      appName: 't',
+      evalsRun: 'run-7',
+    }));
+
+    const handler = userMessage(
+      { userId: 'u', conversationId: 'c', messageId: 'm' },
+      async () => 'ok',
+    );
+    await handler();
+
+    const root = exporter.getFinishedSpans().find((s) => s.name === 'klira.user.message');
+    expect(root).toBeDefined();
+    expect(root!.attributes['klira.evals.evals_run']).toBe('run-7');
+  });
+
+  it('omits klira.evals.evals_run when not in eval mode', async () => {
+    setGlobalConfig(createConfig({ appName: 't' }));
+
+    const handler = userMessage(
+      { userId: 'u', conversationId: 'c', messageId: 'm' },
+      async () => 'ok',
+    );
+    await handler();
+
+    const root = exporter.getFinishedSpans().find((s) => s.name === 'klira.user.message');
+    expect(root!.attributes['klira.evals.evals_run']).toBeUndefined();
   });
 });
 

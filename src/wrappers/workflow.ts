@@ -77,26 +77,24 @@ export function workflow<TArgs extends unknown[], TReturn>(
       }),
     );
 
-    // Python parity (PROD-764): root klira.user.message carries exactly
-    // these four identifiers and nothing else. Specifically NOT carried:
+    // Python parity (verified against captured OTLP from
+    // `healthcare_agent.py`): klira.user.message carries the four core
+    // identifiers, plus `klira.evals.evals_run` when the SDK is in eval
+    // mode. Specifically NOT carried:
     //   - `klira.entity_name` — every other Klira span has it, but
-    //     Python's user.message doesn't. Verified against the captured
-    //     OTLP payload from `healthcare_agent.py`.
+    //     Python's user.message doesn't.
     //   - `klira.framework`, `klira.healthcare.clinical_domain`,
-    //     `klira.evals.evals_run`, `klira.evals.dataset_id` — these
-    //     belong on workflow / tool / eval-test-case spans, not on the
-    //     root. Set on child spans via `applyRuntimeAttrs` from the
-    //     propagated OTel context.
-    //
-    // The global CLAUDE.md says `klira.entity_name` is required on
-    // every Klira span; that's the spec, but Python's actual emission
-    // is the source of truth for wire shape and JS matches Python.
+    //     `klira.evals.dataset_id` — these belong on workflow / tool
+    //     spans, set there via `applyRuntimeAttrs` / `setClinicalContext`.
     const rootAttrs: Record<string, string> = {
       'klira.entity_type': 'user_message',
       'klira.user_id': 'anonymous',
       'klira.conversation_id': conversationId,
       'klira.message_id': messageId,
     };
+    if (config?.evalsRun) {
+      rootAttrs['klira.evals.evals_run'] = config.evalsRun;
+    }
 
     return otelContext.with(ctx, () =>
       tracer.startActiveSpan(
