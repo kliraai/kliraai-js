@@ -21,16 +21,33 @@ import { getTracer } from '../observability/pipeline.js';
 /**
  * Run an LLM call inside a `klira.llm.{provider}` span.
  *
- * **Wire shape (Python parity, PROD-764):** the LLM span carries only
- * `klira.entity_type`, the `gen_ai.*` semantic-convention attributes,
- * and `klira.output`. It deliberately does *not* carry the propagated
- * `klira.user_id` / `klira.conversation_id` / `klira.framework` that
- * non-LLM wrappers stamp — Python's `klira.llm.*` span is opinionated
- * about staying lean to keep the GenAI-conventions surface clean.
+ * **Wire shape (Python parity, PROD-764).** The LLM span carries only:
  *
- * For **streaming** calls, `extractResult` may return `{ stream: true }`
- * to defer span closure. The adapter is responsible for finalizing the
- * span via the `finalize` callback once the stream resolves.
+ *   - `klira.entity_type = "llm"`
+ *   - `gen_ai.system`, `gen_ai.request.model`, `gen_ai.response.model`
+ *   - `gen_ai.usage.input_tokens` / `output_tokens`, `gen_ai.response.finish_reasons`
+ *   - `gen_ai.prompt`
+ *   - `klira.output`
+ *
+ * Python's `klira.llm.*` span is opinionated about staying lean to keep
+ * the GenAI-conventions surface clean, so JS deliberately omits:
+ *
+ *   - `klira.entity_name` — present on most other Klira spans, but not on
+ *     `klira.llm.*`. Python's adapter doesn't set it; verified against
+ *     the captured OTLP payload.
+ *   - `klira.user_id`, `klira.conversation_id`, `klira.framework` — these
+ *     propagate from the OTel context onto other wrapper spans via
+ *     `applyRuntimeAttrs`, but the LLM span path explicitly skips it.
+ *
+ * The global CLAUDE.md says `klira.entity_name` and `klira.user_id` are
+ * required on every Klira span; that's the documented spec, but Python's
+ * actual emission is the source of truth for the wire shape, and the JS
+ * SDK matches Python. Spec reconciliation is tracked outside this code.
+ *
+ * For **streaming** calls, use `startStreamingLLMSpan` /
+ * `finalizeStreamSpan` / `failStreamSpan` instead — `withLLMSpan`'s
+ * `finally` ends the span the moment its inner function returns, which
+ * for streaming would close the span before the first token flows.
  */
 export interface WithLLMSpanOptions {
   /**

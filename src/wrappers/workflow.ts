@@ -77,10 +77,20 @@ export function workflow<TArgs extends unknown[], TReturn>(
       }),
     );
 
-    // Python parity (PROD-764): root klira.user.message only carries the
-    // four core identifiers. Other tagging (framework, evals_run,
-    // clinical_domain) lives on workflow / tool spans, set there via
-    // applyRuntimeAttrs from the propagated OTel context.
+    // Python parity (PROD-764): root klira.user.message carries exactly
+    // these four identifiers and nothing else. Specifically NOT carried:
+    //   - `klira.entity_name` — every other Klira span has it, but
+    //     Python's user.message doesn't. Verified against the captured
+    //     OTLP payload from `healthcare_agent.py`.
+    //   - `klira.framework`, `klira.healthcare.clinical_domain`,
+    //     `klira.evals.evals_run`, `klira.evals.dataset_id` — these
+    //     belong on workflow / tool / eval-test-case spans, not on the
+    //     root. Set on child spans via `applyRuntimeAttrs` from the
+    //     propagated OTel context.
+    //
+    // The global CLAUDE.md says `klira.entity_name` is required on
+    // every Klira span; that's the spec, but Python's actual emission
+    // is the source of truth for wire shape and JS matches Python.
     const rootAttrs: Record<string, string> = {
       'klira.entity_type': 'user_message',
       'klira.user_id': 'anonymous',

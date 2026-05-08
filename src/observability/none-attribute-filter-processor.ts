@@ -1,11 +1,15 @@
 /**
  * Klira SDK — Pre-export attribute hygiene processor.
  *
- * Mirrors Python `klira/sdk/telemetry/processor.py`. Two responsibilities:
- *   1. Strip null / undefined attribute values so the OTLP exporter never
- *      emits them on the wire.
- *   2. Inject `klira.duration_ms` (and `klira.guardrails.latency_ms` for
- *      guardrails spans) if the wrappers haven't already set it.
+ * Strips null / undefined attribute values pre-export so the OTLP exporter
+ * never emits them on the wire. Mirrors the same responsibility in Python
+ * `klira/sdk/telemetry/processor.py`.
+ *
+ * **Note:** an earlier revision of this processor also injected
+ * `klira.duration_ms` and `klira.guardrails.latency_ms`. Both were removed
+ * in PROD-764 — Python doesn't emit them, the cross-SDK parity diff caught
+ * the drift, and span duration is recoverable from `start_time` /
+ * `end_time` on the wire.
  */
 
 import type {
@@ -17,15 +21,6 @@ import type {
   SpanProcessor,
 } from '@opentelemetry/sdk-trace-base';
 
-/**
- * Strips null / undefined attribute values pre-export so the OTLP exporter
- * never emits them on the wire. Mirrors Python `klira/sdk/telemetry/processor.py`.
- *
- * Note: an earlier revision also injected `klira.duration_ms` /
- * `klira.guardrails.latency_ms` here. Removed in PROD-764 because Python's
- * processor doesn't emit those, and the cross-SDK parity diff failed on them.
- * Span duration is recoverable from `start_time` / `end_time` on the wire.
- */
 export class NoneAttributeFilterProcessor implements SpanProcessor {
   onStart(_span: ApiSpan, _parentContext: Context): void {
     // no-op

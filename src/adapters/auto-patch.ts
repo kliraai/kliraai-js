@@ -31,23 +31,19 @@
 
 import { createOllamaAdapter } from './ollama/index.js';
 import { createLiteLLMAdapter } from './litellm/index.js';
-import { getGlobalConfigOrNull } from '../config/index.js';
+import { pkgLog } from '../utils/logger.js';
 
 type DynamicImport = (specifier: string) => Promise<unknown>;
 const dynamicImport: DynamicImport = (s) => import(/* @vite-ignore */ s);
 
 function logUnavailable(packageName: string): void {
-  // Use console directly — the SimpleLogger requires a config that may
-  // not be wired yet on first init. Gate on verbose / debug so quiet
-  // setups stay quiet.
-  const cfg = getGlobalConfigOrNull();
-  if (cfg?.verbose || cfg?.debugMode) {
-    // eslint-disable-next-line no-console
-    console.info(
-      `[Klira] auto-patch: '${packageName}' uses per-instance method structure; ` +
-        `wrap clients explicitly with the corresponding createXAdapter() factory.`,
-    );
-  }
+  // Info-level: not a problem per se, just informational for verbose
+  // operators who want to know which providers Klira tried but couldn't
+  // auto-patch. Quiet setups stay quiet.
+  pkgLog.info(
+    `auto-patch: '${packageName}' uses per-instance method structure; ` +
+      `wrap clients explicitly with the corresponding createXAdapter() factory.`,
+  );
 }
 
 async function tryPatch(

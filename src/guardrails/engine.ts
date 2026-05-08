@@ -23,6 +23,8 @@ import { FastRulesEngine } from './fast-rules.js';
 import { PolicyAugmentation } from './policy-augmentation.js';
 import { routeDecision, type GuardrailDecision } from './decision-router.js';
 import { scheduleAudit } from './compliance-audit.js';
+import { LLMFallbackService, type LLMService } from './llm-fallback.js';
+import { loadDefaultPolicies, loadPoliciesFromYAML, loadPoliciesFromAPI } from './policy-loader.js';
 
 /** Map the past-tense internal decision to Python's action-verb wire value. */
 function decisionToAction(decision: GuardrailDecision): string {
@@ -33,8 +35,6 @@ function decisionToAction(decision: GuardrailDecision): string {
     case 'llm_fallback': return 'llm_fallback';
   }
 }
-import { LLMFallbackService, type LLMService } from './llm-fallback.js';
-import { loadDefaultPolicies, loadPoliciesFromYAML, loadPoliciesFromAPI } from './policy-loader.js';
 
 // ---------------------------------------------------------------------------
 // Config

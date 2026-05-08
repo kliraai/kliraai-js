@@ -10,6 +10,7 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 import yaml from 'js-yaml';
 import type { PolicyDefinition, PolicyRule } from '../types/index.js';
+import { pkgLog } from '../utils/logger.js';
 
 // ---------------------------------------------------------------------------
 // Pattern cache with compiled regexes
@@ -178,8 +179,10 @@ export function loadPoliciesFromYAML(filePath: string): PolicyDefinition[] {
   try {
     const content = fs.readFileSync(filePath, 'utf-8');
     if (containsYamlAliases(content)) {
-      console.warn(
-        `[Klira] YAML aliases / anchors are not allowed in policy files (${filePath}); ignoring.`,
+      // YAML aliases are a security signal (DoS hardening) — operators
+      // should always see the rejection, even on quiet (non-verbose) setups.
+      pkgLog.warn(
+        `YAML aliases / anchors are not allowed in policy files (${filePath}); ignoring.`,
       );
       return [];
     }
