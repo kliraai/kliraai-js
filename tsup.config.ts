@@ -11,6 +11,7 @@ export default defineConfig({
     'adapters/ollama/index': 'src/adapters/ollama/index.ts',
     'adapters/litellm/index': 'src/adapters/litellm/index.ts',
     'adapters/custom/index': 'src/adapters/custom/index.ts',
+    'testing/index': 'src/testing/index.ts',
   },
   format: ['cjs', 'esm'],
   dts: true,

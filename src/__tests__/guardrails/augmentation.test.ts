@@ -74,16 +74,32 @@ describe('buildAugmentedInstructions (OpenAI Responses shape)', () => {
 });
 
 describe('buildAugmentedContents (Gemini shape)', () => {
-  it('prepends a content with the guideline text', () => {
+  it('merges guidelines into the first user turn (Python parity, no double user turn)', () => {
+    // Gemini rejects two consecutive `user` turns with HTTP 400, so the
+    // augmentation merges instead of prepending a synthetic turn.
     const original = [{ role: 'user', parts: [{ text: 'Hi' }] }];
     const result = buildAugmentedContents(original, ['Cite sources']) as any[];
+    expect(result.length).toBe(1);
+    expect(result[0].role).toBe('user');
+    expect(String(result[0].parts[0].text)).toContain('Cite sources');
+    expect(String(result[0].parts[0].text)).toContain('Hi');
+  });
+
+  it('prepends a single user turn when contents starts with a non-user role', () => {
+    // Gemini also requires the first content to be role: "user", so when
+    // the original first turn is something else (rare, e.g. tool), we
+    // still need a leading user turn for the guidelines.
+    const original = [{ role: 'model', parts: [{ text: 'Earlier reply' }] }];
+    const result = buildAugmentedContents(original, ['Cite sources']) as any[];
     expect(result.length).toBe(2);
+    expect(result[0].role).toBe('user');
     expect(String(result[0].parts[0].text)).toContain('Cite sources');
   });
 
   it('handles undefined contents', () => {
     const result = buildAugmentedContents(undefined, ['Cite sources']) as any[];
     expect(result.length).toBe(1);
+    expect(result[0].role).toBe('user');
   });
 });
 

@@ -2,7 +2,8 @@
  * Klira SDK v2 — Shared LLM adapter utilities.
  *
  * Creates klira.llm.{provider} spans with gen_ai.* semantic convention attributes.
- * Truncates prompt to 10k chars, output to 5k chars per contract.
+ * Truncates prompt to 10k chars, output to 5k chars (silent — no `[truncated]`
+ * sentinel; Python parity).
  */
 
 import { SpanStatusCode, type Span } from '@opentelemetry/api';
@@ -26,19 +27,35 @@ import { getTracer } from '../observability/pipeline.js';
  * `klira.user_id` / `klira.conversation_id` / `klira.framework` that
  * non-LLM wrappers stamp — Python's `klira.llm.*` span is opinionated
  * about staying lean to keep the GenAI-conventions surface clean.
+ *
+ * For **streaming** calls, `extractResult` may return `{ stream: true }`
+ * to defer span closure. The adapter is responsible for finalizing the
+ * span via the `finalize` callback once the stream resolves.
  */
+export interface WithLLMSpanOptions {
+  /**
+   * Override `gen_ai.system`. Defaults to the *base* of `provider` —
+   * everything before the first `.`. So `provider="openai.completion"`
+   * yields `gen_ai.system = "openai"` (Python parity), while
+   * `provider="anthropic"` yields `gen_ai.system = "anthropic"`.
+   */
+  system?: string;
+}
+
 export async function withLLMSpan<T>(
   provider: string,
   options: LLMCallOptions,
   fn: (span: Span) => Promise<T>,
   extractResult?: (response: T) => LLMCallResult,
+  opts: WithLLMSpanOptions = {},
 ): Promise<T> {
   const tracer = getTracer();
   const spanName = `klira.llm.${provider}`;
+  const system = (opts.system ?? provider.split('.')[0] ?? provider).toLowerCase();
 
   return tracer.startActiveSpan(spanName, async (span) => {
     span.setAttribute('klira.entity_type', 'llm');
-    span.setAttribute('gen_ai.system', provider.toLowerCase());
+    span.setAttribute('gen_ai.system', system);
     span.setAttribute('gen_ai.request.model', options.model);
     if (options.messages && options.messages.length > 0) {
       span.setAttribute(
@@ -62,6 +79,51 @@ export async function withLLMSpan<T>(
       span.end();
     }
   });
+}
+
+/**
+ * Open an LLM span for a streaming call, return the span so the adapter
+ * can hold it, set request attributes, and run the wrapped network call.
+ * The caller is responsible for calling `finalizeStreamSpan(span, result)`
+ * when the stream resolves (and `failStreamSpan(span, err)` on error).
+ *
+ * Use this instead of `withLLMSpan` for `params.stream === true` so the
+ * span doesn't close before tokens flow.
+ */
+export function startStreamingLLMSpan(
+  provider: string,
+  options: LLMCallOptions,
+  opts: WithLLMSpanOptions = {},
+): Span {
+  const tracer = getTracer();
+  const spanName = `klira.llm.${provider}`;
+  const system = (opts.system ?? provider.split('.')[0] ?? provider).toLowerCase();
+  const span = tracer.startSpan(spanName);
+  span.setAttribute('klira.entity_type', 'llm');
+  span.setAttribute('gen_ai.system', system);
+  span.setAttribute('gen_ai.request.model', options.model);
+  if (options.messages && options.messages.length > 0) {
+    span.setAttribute(
+      'gen_ai.prompt',
+      truncate(JSON.stringify(options.messages), PROMPT_TRUNCATION_LIMIT),
+    );
+  }
+  return span;
+}
+
+export function finalizeStreamSpan(span: Span, result: LLMCallResult): void {
+  setResponseAttributes(span, result);
+  span.setStatus({ code: SpanStatusCode.OK });
+  span.end();
+}
+
+export function failStreamSpan(span: Span, error: unknown): void {
+  span.recordException(error as Error);
+  span.setStatus({
+    code: SpanStatusCode.ERROR,
+    message: error instanceof Error ? error.message : String(error),
+  });
+  span.end();
 }
 
 // ---------------------------------------------------------------------------

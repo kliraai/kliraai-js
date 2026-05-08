@@ -66,6 +66,13 @@ export class Klira {
 
       // Wire the built-in LLM fallback evaluator onto the singleton
       // engine when the customer configured a provider.
+      //
+      // PROD-764 — `getInstance(config)` ignores the config argument when
+      // a singleton already exists (e.g. across init→shutdown→init or
+      // tests that pre-seed the engine). We need to both attach the
+      // evaluator AND flip `config.llmFallbackEnabled` on the existing
+      // engine — `runLifecycle` gates on that flag, not on whether a
+      // service is configured.
       if (config.llmFallback.provider) {
         const engine = GuardrailsEngine.getInstance({
           llmFallbackEnabled: true,
@@ -76,14 +83,13 @@ export class Klira {
             onError: config.llmFallback.onError,
           }),
         });
-        // The engine constructor only configures the service when provided
-        // before getInstance(); if the singleton already existed, attach now.
         engine['llmFallback'].configureBuiltIn({
           provider: config.llmFallback.provider,
           model: config.llmFallback.model,
           apiKey: config.llmFallback.apiKey,
           onError: config.llmFallback.onError,
         });
+        engine.setLlmFallbackEnabled(true);
       }
 
       Klira._initialized = true;
@@ -174,7 +180,11 @@ export {
 } from './contracts/adapter-interfaces.js';
 
 // Re-export observability
-export { getTracer, getProviderForTesting } from './observability/pipeline.js';
+export { getTracer } from './observability/pipeline.js';
+
+// `getProviderForTesting` is intentionally NOT re-exported from the
+// package root — it's available via the `klira/testing` subpath, which
+// signals to consumers that it's an unstable testing-only escape hatch.
 
 // Re-export wrappers
 export { workflow, agent, task, tool, userMessage } from './wrappers/index.js';

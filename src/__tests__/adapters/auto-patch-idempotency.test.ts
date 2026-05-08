@@ -75,7 +75,7 @@ describe('idempotency sentinel', () => {
 
     const llmSpans = exporter.getFinishedSpans().filter((s) => s.name.startsWith('klira.llm.'));
     expect(llmSpans).toHaveLength(1);
-    expect(llmSpans[0].name).toBe('klira.llm.openai');
+    expect(llmSpans[0].name).toBe('klira.llm.openai.completion');
   });
 
   it('Anthropic short-circuits second-wrap', () => {
@@ -121,7 +121,10 @@ describe('OpenAI Responses adapter (Python parity)', () => {
     const spans = exporter.getFinishedSpans();
     const llm = spans.find((s) => s.name === 'klira.llm.openai.responses');
     expect(llm).toBeDefined();
-    expect(llm!.attributes['gen_ai.system']).toBe('openai.responses');
+    // Python parity: gen_ai.system is the *provider* name only ("openai"),
+    // not the API variant. The span name carries the variant via the
+    // `.responses` operation suffix.
+    expect(llm!.attributes['gen_ai.system']).toBe('openai');
     expect(llm!.attributes['gen_ai.usage.input_tokens']).toBe(2);
     expect(llm!.attributes['gen_ai.usage.output_tokens']).toBe(3);
   });

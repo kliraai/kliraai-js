@@ -71,7 +71,22 @@ export function buildAugmentedInstructions(
 }
 
 /**
- * Gemini `contents` array: prepend a system-style content with the guidelines.
+ * Gemini `contents` array: merge guideline text into the first user turn
+ * rather than prepending a synthetic user turn.
+ *
+ * Gemini's API rejects requests with two consecutive `user` turns, so the
+ * earlier `unshift({ role: 'user', parts: [{text}] })` would 400 against
+ * any request whose first content was already a user turn. We instead
+ * concatenate the guideline block into the first user turn's first text
+ * part, falling back to creating a single user turn when `contents` is
+ * empty or starts with a non-user role (Gemini also requires the first
+ * turn to be `role: 'user'`).
+ *
+ * If your project has a `systemInstruction` channel available (Gemini
+ * models support it as a top-level kwarg), prefer that — it's the
+ * cleanest mapping and matches what Anthropic does. We fold here rather
+ * than reach for `systemInstruction` because the adapter doesn't see the
+ * top-level `generateContent` kwargs, only the `contents` field.
  */
 export function buildAugmentedContents(
   contents: unknown[] | undefined,
@@ -80,7 +95,21 @@ export function buildAugmentedContents(
   const list = Array.isArray(contents) ? [...contents] : [];
   if (guidelines.length === 0) return list;
   const text = formatGuidelines(guidelines).trim();
-  list.unshift({ role: 'user', parts: [{ text }] });
+
+  // Empty or non-user first turn → create a single user turn.
+  const first = list[0] as { role?: string; parts?: Array<{ text?: string }> } | undefined;
+  if (!first || first.role !== 'user') {
+    return [{ role: 'user', parts: [{ text }] }, ...list];
+  }
+
+  // Merge into first user turn's first text part.
+  const parts = Array.isArray(first.parts) ? [...first.parts] : [];
+  if (parts.length > 0 && typeof parts[0]?.text === 'string') {
+    parts[0] = { ...parts[0], text: `${text}\n\n${parts[0].text}` };
+  } else {
+    parts.unshift({ text });
+  }
+  list[0] = { ...first, parts };
   return list;
 }
 

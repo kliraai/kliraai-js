@@ -263,7 +263,7 @@ describe('OpenAI adapter', () => {
     expect(result.choices[0].message.content).toBe('Hello! How can I help?');
 
     const spans = exporter.getFinishedSpans();
-    const llmSpan = spans.find((s) => s.name === 'klira.llm.openai');
+    const llmSpan = spans.find((s) => s.name === 'klira.llm.openai.completion');
     expect(llmSpan).toBeDefined();
     expect(llmSpan!.attributes['gen_ai.system']).toBe('openai');
     expect(llmSpan!.attributes['gen_ai.request.model']).toBe('gpt-4o');

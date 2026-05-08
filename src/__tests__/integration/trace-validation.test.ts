@@ -112,7 +112,7 @@ describe('End-to-end trace validation', () => {
     expect(spanNames).toContain('klira.agent.my-agent');
     expect(spanNames).toContain('klira.task.process');
     expect(spanNames).toContain('klira.tool.search');
-    expect(spanNames).toContain('klira.llm.openai');
+    expect(spanNames).toContain('klira.llm.openai.completion');
 
     // Validate user message span attributes
     const userSpan = spans.find((s) => s.name === 'klira.user.message');
@@ -122,7 +122,7 @@ describe('End-to-end trace validation', () => {
     expect(userSpan!.attributes['klira.message_id']).toBe('msg-1');
 
     // Validate LLM span attributes
-    const llmSpan = spans.find((s) => s.name === 'klira.llm.openai');
+    const llmSpan = spans.find((s) => s.name === 'klira.llm.openai.completion');
     expect(llmSpan).toBeDefined();
     expect(llmSpan!.attributes['gen_ai.system']).toBe('openai');
     expect(llmSpan!.attributes['gen_ai.request.model']).toBe('gpt-4o');

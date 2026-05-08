@@ -8,7 +8,7 @@
  * `klira/sdk/decorators/workflow.py`).
  */
 
-import { context as otelContext } from '@opentelemetry/api';
+import { context as otelContext, SpanStatusCode } from '@opentelemetry/api';
 import { withSpan } from './context.js';
 import { captureOutput } from './output.js';
 import { getTracer } from '../observability/pipeline.js';
@@ -78,8 +78,9 @@ export function workflow<TArgs extends unknown[], TReturn>(
     );
 
     // Python parity (PROD-764): root klira.user.message only carries the
-    // four core identifiers. Other tagging happens on workflow / tool spans.
-    void config;
+    // four core identifiers. Other tagging (framework, evals_run,
+    // clinical_domain) lives on workflow / tool spans, set there via
+    // applyRuntimeAttrs from the propagated OTel context.
     const rootAttrs: Record<string, string> = {
       'klira.entity_type': 'user_message',
       'klira.user_id': 'anonymous',
@@ -93,7 +94,18 @@ export function workflow<TArgs extends unknown[], TReturn>(
         { attributes: rootAttrs },
         async (rootSpan) => {
           try {
-            return await runWorkflow();
+            const value = await runWorkflow();
+            rootSpan.setStatus({ code: SpanStatusCode.OK });
+            return value;
+          } catch (error) {
+            // PROD-764 — record failures on the auto-root so failed traces
+            // don't look identical to successful ones.
+            rootSpan.recordException(error as Error);
+            rootSpan.setStatus({
+              code: SpanStatusCode.ERROR,
+              message: (error as Error).message,
+            });
+            throw error;
           } finally {
             rootSpan.end();
           }

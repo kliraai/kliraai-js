@@ -1,8 +1,12 @@
 /**
- * Klira SDK v2 — Async compliance audit.
+ * Klira SDK v2 — Synchronous compliance audit.
  *
- * Fire-and-forget: creates klira.compliance.{decision} span asynchronously.
- * Never blocks the hot path (Learning #20).
+ * Emits the `klira.compliance.{decision}` span inline with the parent
+ * guardrails span. PROD-764 narrowed Learning #20 ("never block the hot
+ * path") on this call site — a zero-body audit span (one `setAttributes`
+ * + `end`) costs microseconds and removes the flush-race risk where
+ * deferred microtasks lost their span if the process exited before they
+ * ran. The audit and its parent now ship in the same exporter batch.
  */
 
 import { context, SpanStatusCode } from '@opentelemetry/api';

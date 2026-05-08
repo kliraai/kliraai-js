@@ -157,7 +157,11 @@ describe('Gemini — guidelines prepended into contents', () => {
       });
     });
 
-    expect(captured.contents.length).toBe(2);
+    // Single turn (merged into the first user content) — Gemini rejects
+    // two consecutive user turns.
+    expect(captured.contents.length).toBe(1);
+    expect(captured.contents[0].role).toBe('user');
     expect(String(captured.contents[0].parts[0].text)).toContain('Cite sources');
+    expect(String(captured.contents[0].parts[0].text)).toContain('hi');
   });
 });

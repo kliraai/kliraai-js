@@ -112,32 +112,56 @@ export class GuardrailsEngine {
   // Initialization
   // -------------------------------------------------------------------------
 
+  // PROD-764 — keep a single in-flight initialization promise so two
+  // concurrent callers don't both load policies. The first caller pins
+  // `_initializing`; everyone else awaits the same promise.
+  private _initializing: Promise<void> | null = null;
+
   async initialize(): Promise<void> {
     if (this.initialized) return;
+    if (this._initializing) return this._initializing;
 
-    let policies: PolicyDefinition[] = [];
+    this._initializing = (async () => {
+      try {
+        let policies: PolicyDefinition[] = [];
 
-    if (this.config.policyApiEndpoint) {
-      policies = await loadPoliciesFromAPI(
-        this.config.policyApiEndpoint,
-        this.config.apiKey,
-      );
-    }
+        if (this.config.policyApiEndpoint) {
+          policies = await loadPoliciesFromAPI(
+            this.config.policyApiEndpoint,
+            this.config.apiKey,
+          );
+        }
 
-    // Fall back to YAML / default if API returned nothing
-    if (policies.length === 0) {
-      policies = this.config.policyPath
-        ? loadPoliciesFromYAML(this.config.policyPath)
-        : loadDefaultPolicies();
-    }
+        // Fall back to YAML / default if API returned nothing
+        if (policies.length === 0) {
+          policies = this.config.policyPath
+            ? loadPoliciesFromYAML(this.config.policyPath)
+            : loadDefaultPolicies();
+        }
 
-    this.fastRules.initialize(policies);
-    this.augmentation.initialize(policies);
-    this.initialized = true;
+        this.fastRules.initialize(policies);
+        this.augmentation.initialize(policies);
+        this.initialized = true;
+      } finally {
+        this._initializing = null;
+      }
+    })();
+
+    return this._initializing;
   }
 
   isInitialized(): boolean {
     return this.initialized;
+  }
+
+  /**
+   * Flip the `llmFallbackEnabled` config flag at runtime. `getInstance(config)`
+   * ignores the config argument when a singleton already exists, so this is
+   * the only path to enable LLM fallback after the engine has been constructed
+   * (used by `Klira.init` to wire the fallback after the singleton exists).
+   */
+  setLlmFallbackEnabled(enabled: boolean): void {
+    this.config = { ...this.config, llmFallbackEnabled: enabled };
   }
 
   // -------------------------------------------------------------------------

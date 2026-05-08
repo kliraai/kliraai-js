@@ -32,6 +32,12 @@ export class NoneAttributeFilterProcessor implements SpanProcessor {
   }
 
   onEnd(span: ReadableSpan): void {
+    // Mutates `span.attributes` in place. The OTel JS SDK doesn't freeze
+    // the attribute object today, so this works — but `ReadableSpan` is
+    // contractually read-only, and a future SDK release that freezes
+    // attributes would break this. The fix would be to do the filtering
+    // at the exporter layer (we'd own the serialization there). Left as
+    // a known trade-off; widespread pattern across OTel-JS processors.
     const attrs = span.attributes as Record<string, unknown>;
     for (const key of Object.keys(attrs)) {
       const value = attrs[key];
